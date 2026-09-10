@@ -3,23 +3,46 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/copy-workers.mjs",
+    "copy:workers": "node scripts/copy-workers.mjs",
+    "setup:browser": "playwright install chromium",
+    "predev": "node scripts/copy-workers.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-workers.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@mlightcad/cad-simple-ui-plugin": "^1.7.0",
+    "@mlightcad/cad-simple-viewer": "^1.7.0",
+    "@mlightcad/cad-simple-viewer-cli": "^1.7.0",
+    "@mlightcad/data-model": "^1.14.5",
+    "@mlightcad/libredwg-converter": "^3.14.5",
+    "@mlightcad/mtext-renderer": "^0.12.7",
+    "@mlightcad/three-renderer": "^1.7.0",
+    "drizzle-orm": "^0.45.2",
+    "fflate": "^0.8.3",
+    "lodash-es": "^4.17.21",
+    "nanoid": "^6.0.1",
     "next": "16.3.4",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "three": "^0.172.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/lodash-es": "^4.17.12",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.185.4",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "playwright": "1.49.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

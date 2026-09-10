@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated CAD worker/wasm assets (copied by scripts/copy-workers.mjs)
+    "public/workers/**",
+    "data/**",
   ]),
 ]);
 

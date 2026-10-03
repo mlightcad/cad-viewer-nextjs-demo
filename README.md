@@ -40,8 +40,10 @@ If you do not need a drive/API at all and only want to **hand someone one file**
 ## Quick start
 
 ```bash
+git clone --recurse-submodules https://github.com/mlightcad/cad-viewer-nextjs-demo.git
 cd cad-viewer-nextjs-demo
-pnpm install
+# existing clone without fonts: git submodule update --init --recursive
+pnpm install                # postinstall also runs sync-cad-data (jsDelivr if git fails)
 pnpm setup:browser          # install Chromium (first time only)
 pnpm dev
 ```
@@ -62,9 +64,18 @@ pnpm build
 - `libredwg-parser-worker.js`
 - `libredwg-web.wasm`
 
+Fonts, SHX files, DXF templates, and sample drawings come from the [`mlightcad/cad-data`](https://github.com/mlightcad/cad-data) **git submodule** at `cad-data/`. Next.js serves that tree at **`/cad-data/`** (same layout as the [self-hosted fonts wiki](https://github.com/mlightcad/cad-viewer/wiki/Self-Hosted-Fonts-and-Templates)):
+
+- Live viewer: `AcApDocManager` `baseUrl` is this app’s origin + `/cad-data/`
+- Headless convert (`runHeadless`): `baseUrl` is `http://127.0.0.1:$PORT/cad-data/` so Playwright loads local fonts (CLI 1.7.2+). Override with `CAD_DATA_BASE_URL` / `NEXT_PUBLIC_CAD_DATA_BASE_URL` if the app is not on port 3000 or you use a separate CDN.
+
+`cad-data` is not copied into `public/` (avoids duplicating ~46MB of binaries). The catch-all route `GET /cad-data/[[...path]]` reads the submodule and sets CORS so the CLI’s Chromium origin can fetch fonts. Font licensing is **your** responsibility (see the cad-data README).
+
+If `git submodule update` cannot reach GitHub, `scripts/sync-cad-data.mjs` (run from `postinstall` / `pnpm sync:cad-data`) downloads the same tree from jsDelivr.
+
 ## Usage
 
-1. Drag/drop or choose a `.dwg` / `.dxf`, or click **Load sample drawing** (CDN `canteen.dwg`).
+1. Drag/drop or choose a `.dwg` / `.dxf`, or click **Load sample drawing** (local `cad-data/data/canteen.dwg`).
 2. After upload, status becomes **Prerendering**; a preview appears when ready.
 3. **Open (live parse)**: browser parses the original file (original must exist; ACEX not required).
 4. **Open (prerendered)** / click preview: iframe loads that drawing’s `viewer.html` (layers / layouts / measure come from the ACEX viewer).
@@ -103,6 +114,7 @@ lib/convert-queue.ts      Serial prerender queue
 scripts/copy-workers.mjs
 scripts/export-html-multi-preview.scr
 docs/PLAN.md              Implementation plan (English)
+cad-data/                 Submodule: fonts, templates, samples
 data/                     Runtime data (gitignored)
 .github/workflows/ci.yml  Lint, typecheck, build
 ```
@@ -112,6 +124,7 @@ data/                     Runtime data (gitignored)
 - This demo code: MIT (adjust if your repo policy differs)
 - `@mlightcad/libredwg-converter`: **GPL**. If GPL is not acceptable, use a proprietary DWG converter or demo DXF only
 - Other `@mlightcad/cad-simple-viewer` core packages are mostly MIT (see each package’s `package.json`)
+- Fonts/templates in `cad-data/`: third-party; obtain licenses yourself
 
 ## Known limitations (demo)
 

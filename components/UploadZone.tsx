@@ -3,15 +3,13 @@
 import { useCallback, useRef, useState } from 'react'
 
 import { useI18n } from '@/components/I18nProvider'
+import { clientSampleDrawingUrl } from '@/lib/cad-data-url'
 import {
   formatBytes,
   uploadFileChunked,
   type UploadController,
   type UploadProgress,
 } from '@/lib/client-upload'
-
-const SAMPLE_URL =
-  'https://cdn.jsdelivr.net/gh/mlightcad/cad-data@main/data/canteen.dwg'
 
 type Props = {
   onUploaded: () => void
@@ -59,7 +57,7 @@ export function UploadZone({ onUploaded }: Props) {
   const loadSample = async () => {
     setSampleLoading(true)
     try {
-      const res = await fetch(SAMPLE_URL)
+      const res = await fetch(clientSampleDrawingUrl())
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const buf = await res.arrayBuffer()
       const file = new File([buf], 'canteen.dwg', {

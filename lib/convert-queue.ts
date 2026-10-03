@@ -13,6 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { serverCadDataBaseUrl } from './cad-data-url'
 import { db, ensureDb } from './db'
 import { drawings } from './schema'
 import {
@@ -81,6 +82,7 @@ async function convertOne(drawingId: string) {
       scriptPath: scriptPath(),
       outputDir: tmpDir,
       mode: 'read',
+      baseUrl: serverCadDataBaseUrl(),
     })
 
     const listed = await readdir(tmpDir)

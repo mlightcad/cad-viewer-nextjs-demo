@@ -1,0 +1,4 @@
+[submodule "cad-data"]
+	path = cad-data
+	url = https://github.com/mlightcad/cad-data.git
+	ignore = dirty

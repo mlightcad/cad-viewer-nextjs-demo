@@ -122,7 +122,7 @@ iframe `src=/api/drawings/{id}/acex/viewer.html` so relative `./drawing.acex.jso
 - `scripts/copy-workers.mjs` (postinstall / predev) copies into `public/workers/`:
   - `mtext-renderer-worker.js` from `@mlightcad/cad-simple-viewer`
   - `libredwg-parser-worker.js` + `libredwg-web.wasm` from `@mlightcad/libredwg-converter`
-- Client: register LibreDWG converter; `AcApDocManager.createInstance({ container, baseUrl: cad-data CDN, webworkerFileUrls, autoResize })`; then `acuiRegisterSimpleUiPlugin`
+- Client: register LibreDWG converter; `AcApDocManager.createInstance({ container, baseUrl: same-origin /cad-data/, webworkerFileUrls, autoResize })`; then `acuiRegisterSimpleUiPlugin`. Fonts come from the `cad-data` git submodule, served by `GET /cad-data/[[...path]]` (CORS enabled for the Playwright CLI).
 - Open: `fetch(/api/drawings/{id}/file)` → `openDocument(name, arrayBuffer, { mode: Read })`
 - `next.config.ts`: `transpilePackages` for `@mlightcad/*`, `three`, `lodash-es`; `serverExternalPackages` for playwright / CLI / libsql; CAD UI must not SSR
 
@@ -134,7 +134,7 @@ iframe `src=/api/drawings/{id}/acex/viewer.html` so relative `./drawing.acex.jso
 - **`/view/[id]?mode=prerender`**: fullscreen ACEX iframe (layers / layouts / measure from the export package)
 - Language toggle: **English** default; Chinese available; saved preference in `localStorage` (does not auto-switch to Chinese from browser language)
 
-Empty state: upload DWG/DXF, or **Load sample drawing** (`canteen.dwg` from cad-data CDN) through the same upload/convert pipeline.
+Empty state: upload DWG/DXF, or **Load sample drawing** (`canteen.dwg` from local `/cad-data/data/canteen.dwg`) through the same upload/convert pipeline. Headless convert passes `baseUrl` so Chromium loads fonts from this app, not jsDelivr.
 
 ## README must cover
 

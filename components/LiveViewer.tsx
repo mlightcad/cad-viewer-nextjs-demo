@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { useI18n } from '@/components/I18nProvider'
+import { clientCadDataBaseUrl } from '@/lib/cad-data-url'
 
 type Props = {
   drawingId: string
@@ -78,7 +79,7 @@ export function LiveViewer({ drawingId, fileName }: Props) {
         const manager = AcApDocManager.createInstance({
           container: host,
           autoResize: true,
-          baseUrl: 'https://cdn.jsdelivr.net/gh/mlightcad/cad-data@main/',
+          baseUrl: clientCadDataBaseUrl(),
           webworkerFileUrls: {
             mtextRender: mtextUrl,
             dwgParser: dwgParserUrl,

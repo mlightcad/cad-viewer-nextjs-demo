@@ -41,13 +41,22 @@ UI 支持 **English / 中文**（右上角切换，**默认英文**；用户选�
 ## 快速开始
 
 ```bash
+git clone --recurse-submodules https://github.com/mlightcad/cad-viewer-nextjs-demo.git
 cd cad-viewer-nextjs-demo
-pnpm install
+# 已有仓库缺字体时：git submodule update --init --recursive
+pnpm install                # postinstall 会跑 sync-cad-data（git 失败则走 jsDelivr）
 pnpm setup:browser          # 安装 Chromium（仅首次）
 pnpm dev
 ```
 
 打开 [http://localhost:3000](http://localhost:3000)。
+
+字体、SHX、DXF 模板和示例图纸来自 git submodule [`mlightcad/cad-data`](https://github.com/mlightcad/cad-data)（目录 `cad-data/`）。Next.js 按 [自托管字体说明](https://github.com/mlightcad/cad-viewer/wiki/Self-Hosted-Fonts-and-Templates) 的目录结构通过 **`/cad-data/`** 提供：
+
+- 实时查看器：`baseUrl` 为本站 origin + `/cad-data/`
+- 无头转换：`runHeadless({ baseUrl })` 指向 `http://127.0.0.1:$PORT/cad-data/`（需 CLI ≥ 1.7.2）。若应用不在 3000 端口或字体在独立 CDN，设置 `CAD_DATA_BASE_URL` / `NEXT_PUBLIC_CAD_DATA_BASE_URL`。
+
+不把 `cad-data` 复制进 `public/`，避免再存一份约 46MB 的二进制。字体许可需自行购买（见 cad-data README）。无法访问 GitHub git 时，`pnpm sync:cad-data`（`postinstall` 也会调用）会从 jsDelivr 拉取同一套文件。
 
 本地检查（与 GitHub Actions CI 一致）：
 
@@ -59,7 +68,7 @@ pnpm build
 
 ## 使用说明
 
-1. 拖拽或选择 `.dwg` / `.dxf`，或点击 **Load sample drawing**（CDN `canteen.dwg`）。
+1. 拖拽或选择 `.dwg` / `.dxf`，或点击 **Load sample drawing**（本地 `cad-data/data/canteen.dwg`）。
 2. 上传完成后状态变为「预渲染中」；完成后出现预览图。
 3. **Open (live parse)**：浏览器解析原始文件（需等原文件就绪，不必等 ACEX）。
 4. **Open (prerendered)** / 点击预览：iframe 加载该图纸的 `viewer.html`。
@@ -73,3 +82,4 @@ pnpm build
 - 本示例代码：MIT
 - `@mlightcad/libredwg-converter`：**GPL**
 - 其余核心包多为 MIT（以各包 `package.json` 为准）
+- `cad-data/` 中的字体与模板为第三方数据，许可需自行解决

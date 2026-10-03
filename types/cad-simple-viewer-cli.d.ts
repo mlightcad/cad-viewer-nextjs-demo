@@ -8,6 +8,11 @@ declare module '@mlightcad/cad-simple-viewer-cli' {
     locale?: string
     mode?: CadViewerCliOpenMode
     logfile?: string
+    /** Resource base URL for fonts and templates (`http`/`https`). */
+    baseUrl?: string
+    openViewMode?: 'extents' | 'saved'
+    drawNoPlotLayers?: boolean
+    circleSides?: number
   }
 
   export interface RunHeadlessResult {

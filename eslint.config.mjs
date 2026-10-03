@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     // Generated CAD worker/wasm assets (copied by scripts/copy-workers.mjs)
     "public/workers/**",
     "data/**",
+    "cad-data/**",
   ]),
 ]);
 

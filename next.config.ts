@@ -12,9 +12,7 @@ const nextConfig: NextConfig = {
     'lodash-es',
   ],
   serverExternalPackages: [
-    '@mlightcad/cad-simple-viewer-cli',
-    'playwright',
-    'playwright-core',
+    '@mlightcad/cad-html-exporter',
     '@libsql/client',
     'libsql',
   ],

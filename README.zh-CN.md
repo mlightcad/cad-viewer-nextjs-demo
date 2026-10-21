@@ -7,11 +7,11 @@
 | 模式 | 说明 | 适用场景 |
 |------|------|----------|
 | **实时解析（Live）** | 浏览器下载原始 DWG/DXF，用 LibreDWG WASM + Web Worker 解析并渲染 | 需要实体级交互、与完整 viewer 能力一致 |
-| **预渲染（Prerendered）** | 服务端用 CLI（Playwright 无头 Chromium）转成 **ACEX** 多文件包，浏览器只加载显示几何 | 发布/分享/反复查看，首屏更快、内存更少 |
+| **预渲染（Prerendered）** | 服务端用 [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter)（纯 Node，无需浏览器）转成 **ACEX** 多文件包，浏览器只加载显示几何 | 发布/分享/反复查看，首屏更快、内存更少 |
 
 UI 支持 **English / 中文**（右上角切换，**默认英文**；用户选择写入 `localStorage`）。
 
-> 服务端并不是「纯 Node 解析 DWG」，而是官方推荐的 [`@mlightcad/cad-simple-viewer-cli`](https://www.npmjs.com/package/@mlightcad/cad-simple-viewer-cli) 无头浏览器管线。详见 [ACEX 托管指南](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md)。
+> 服务端转换走无头 Node 导出器 [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter)（LibreDWG + three-renderer stub，无 Playwright）。详见 [ACEX 托管指南](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md)。
 
 ## 为什么要两种打开方式？
 
@@ -29,14 +29,13 @@ UI 支持 **English / 中文**（右上角切换，**默认英文**；用户选�
 - 网盘式首页：预览图卡片、状态徽章（上传中 / 预渲染中 / 就绪 / 失败）
 - **分片上传 + 断点续传**（2 MiB/片，进度可暂停，刷新后按 `name+size+lastModified` 续传）
 - SQLite（`@libsql/client` 本地文件库，易启动）
-- 上传完成后串行转换：ACEX zip + PNG 预览（脚本使用 `pngout`；当前 npm CLI runner 不含 `jpgout`）
+- 上传完成后串行转换：ACEX 多文件包 + JPEG 预览（图纸内嵌缩略图存在时）
 - 打开图纸时可在「实时解析 / 预渲染」之间切换；点击预览图以预渲染方式打开
 
 ## 环境要求
 
-- **Node.js 20+**（推荐 22/24）
+- **Node.js 22+**（`@mlightcad/cad-html-exporter` 要求）
 - **pnpm** 10+
-- 首次需安装 Playwright Chromium（转换用）
 
 ## 快速开始
 
@@ -45,7 +44,6 @@ git clone --recurse-submodules https://github.com/mlightcad/cad-viewer-nextjs-de
 cd cad-viewer-nextjs-demo
 # 已有仓库缺字体时：git submodule update --init --recursive
 pnpm install                # postinstall 会跑 sync-cad-data（git 失败则走 jsDelivr）
-pnpm setup:browser          # 安装 Chromium（仅首次）
 pnpm dev
 ```
 
@@ -54,7 +52,7 @@ pnpm dev
 字体、SHX、DXF 模板和示例图纸来自 git submodule [`mlightcad/cad-data`](https://github.com/mlightcad/cad-data)（目录 `cad-data/`）。Next.js 按 [自托管字体说明](https://github.com/mlightcad/cad-viewer/wiki/Self-Hosted-Fonts-and-Templates) 的目录结构通过 **`/cad-data/`** 提供：
 
 - 实时查看器：`baseUrl` 为本站 origin + `/cad-data/`
-- 无头转换：`runHeadless({ baseUrl })` 指向 `http://127.0.0.1:$PORT/cad-data/`（需 CLI ≥ 1.7.2）。若应用不在 3000 端口或字体在独立 CDN，设置 `CAD_DATA_BASE_URL` / `NEXT_PUBLIC_CAD_DATA_BASE_URL`。
+- 无头转换：`exportFileToHtml` 的 `fontsDir` 指向本地 `cad-data/`，从磁盘读字体（不走 CDN）。若实时查看器字体在独立 CDN，设置 `NEXT_PUBLIC_CAD_DATA_BASE_URL`。
 
 不把 `cad-data` 复制进 `public/`，避免再存一份约 46MB 的二进制。字体许可需自行购买（见 cad-data README）。无法访问 GitHub git 时，`pnpm sync:cad-data`（`postinstall` 也会调用）会从 jsDelivr 拉取同一套文件。
 

@@ -3,17 +3,17 @@
 Standalone Next.js sample app at `D:\code\cad-viewer-nextjs-demo` (not part of the cad-viewer monorepo). Install `@mlightcad/*` from **npm**. Demonstrates two official viewing architectures:
 
 - **Live parse**: the browser opens the original DWG/DXF with `@mlightcad/cad-simple-viewer`
-- **Prerendered**: the server converts drawings to an ACEX multi-file package via `@mlightcad/cad-simple-viewer-cli`; the browser loads display data only
+- **Prerendered**: the server converts drawings to an ACEX multi-file package via `@mlightcad/cad-html-exporter`; the browser loads display data only
 
-Official hosting notes: [acex-web-hosting-guide.md](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md). Server-side conversion is **not** pure Node DWG parsing — it runs the same viewer pipeline inside Playwright headless Chromium.
+Official hosting notes: [acex-web-hosting-guide.md](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md). Server-side conversion is headless **Node** export (LibreDWG + three-renderer stub) — **no** Playwright / Chromium.
 
 ```mermaid
 flowchart LR
   Browser -->|chunked upload| NextAPI
   NextAPI --> SQLite
   NextAPI --> Disk[(data/)]
-  NextAPI -->|runHeadless| CLI[cad-simple-viewer-cli]
-  CLI -->|zip plus png| Disk
+  NextAPI -->|exportFileToHtml| Exporter[cad-html-exporter]
+  Exporter -->|ACEX dir plus preview.jpg| Disk
   Browser -->|live mode| SimpleViewer[cad-simple-viewer]
   SimpleViewer -->|GET original file| NextAPI
   Browser -->|prerender mode| AcexIframe[viewer.html iframe]
@@ -26,7 +26,7 @@ flowchart LR
 |----|------|
 | scaffold | Scaffold Next.js App Router + Tailwind + drizzle/libsql; gitignore `data/` |
 | upload-api | Chunked upload APIs (init / chunk / status / complete) + localStorage resume |
-| convert-queue | Serial convert queue: `runHeadless` + unzip ACEX + preview PNG; status in SQLite |
+| convert-queue | Serial convert queue: `exportFileToHtml` (multi, no zip) + thumbnail preview; status in SQLite |
 | serve-acex | Drawing CRUD, original file / preview / ACEX routes (no `Content-Encoding` on `.gz`) |
 | netdisk-ui | Drive home: upload progress, preview cards, both open modes, convert status |
 | live-viewer | Client-only cad-simple-viewer + LibreDWG workers + simple-ui toolbar |
@@ -39,12 +39,12 @@ flowchart LR
 - **SQLite**: `drizzle-orm` + `@libsql/client` (file DB; avoids `better-sqlite3` native builds on Windows)
 - **Storage**: local `data/` directory (gitignored); drawings are not stored in the DB blob
 - **Upload**: custom chunked + resumable upload (no tus; easier to read)
-- **Convert**: `runHeadless` + project script `scripts/export-html-multi-preview.scr` (ACEX zip + PNG preview via `pngout`; published CLI runners may not include `jpgout`)
+- **Convert**: `@mlightcad/cad-html-exporter` `exportFileToHtml` with `exportFormat: 'multi'`, `zipPackage: false`, local `fontsDir: cad-data/`
 - **Live viewer**: client-only `next/dynamic({ ssr: false })` + `@mlightcad/cad-simple-ui-plugin`
 - **Prerendered viewer**: iframe → per-drawing `viewer.html` + `drawing.acex.json` + `chunks/`
 - **DWG**: `@mlightcad/libredwg-converter` (GPL — called out in README)
 - **UI locale**: English by default; 中文 / English toggle; preference in `localStorage`
-- Node **20+**; first run needs `pnpm setup:browser` (Playwright Chromium)
+- Node **22+** (required by cad-html-exporter)
 
 ## Directory layout
 
@@ -66,7 +66,6 @@ cad-viewer-nextjs-demo/
   lib/                                # db, schema, storage, convert-queue, upload, i18n
   docs/PLAN.md                        # This plan (English)
   scripts/copy-workers.mjs
-  scripts/export-html-multi-preview.scr
   data/                               # sqlite + files (gitignore)
   public/workers/
 ```
@@ -82,7 +81,7 @@ On-disk layout:
 - `data/app.db`
 - `data/uploads/{uploadId}/chunk-{n}`
 - `data/drawings/{id}/original.{dwg|dxf}`
-- `data/drawings/{id}/preview.png` (or `.jpg` if produced)
+- `data/drawings/{id}/preview.jpg` (when the drawing has an embedded thumbnail)
 - `data/drawings/{id}/acex/viewer.html`, `drawing.acex.json`, `chunks/*.gz`
 
 ## Chunked resume upload
@@ -96,18 +95,18 @@ Limits: `.dwg` / `.dxf` only; ~200MB max; path-traversal guards. Pause = stop PU
 
 ## Server-side prerender
 
-In-process **serial queue** (Playwright is heavy; SQLite persists jobs; on Next restart, re-enqueue `processing` rows):
+In-process **serial queue** (one drawing per child process; SQLite persists jobs; on Next restart / HMR, kill any orphan via `data/drawings/{id}/.convert.pid` then re-enqueue `processing` rows):
 
 ```ts
-await runHeadless({
-  inputPath: originalPath,
-  scriptPath: pathTo('export-html-multi-preview.scr'),
-  outputDir: tmpDir,
-  mode: 'read'
+await exportFileToHtml(originalPath, acexDir, {
+  exportFormat: 'multi',
+  zipPackage: false,
+  viewerMode: 'measure',
+  fontsDir: cadDataRoot(),
 })
 ```
 
-Unzip with `fflate` (do not import full `@mlightcad/cad-html-plugin` into Node routes — it pulls Three.js). Store preview image; write ACEX directory as-is. On failure set `status=failed` + `error`.
+Writes `viewer.html` / `drawing.acex.json` / `chunks/` directly into the drawing’s ACEX folder. When the DWG/DXF has a thumbnail, copies `preview.jpg` next to the original for the drive card. On failure set `status=failed` + `error`.
 
 **ACEX hosting rule** (official FAQ): `.acex.gz` / `.osnap.gz` must be returned as opaque bytes — **never** set `Content-Encoding: gzip`. Do not serve from `public/`; always use `GET /api/drawings/[id]/acex/[[...path]]`:
 
@@ -122,9 +121,9 @@ iframe `src=/api/drawings/{id}/acex/viewer.html` so relative `./drawing.acex.jso
 - `scripts/copy-workers.mjs` (postinstall / predev) copies into `public/workers/`:
   - `mtext-renderer-worker.js` from `@mlightcad/cad-simple-viewer`
   - `libredwg-parser-worker.js` + `libredwg-web.wasm` from `@mlightcad/libredwg-converter`
-- Client: register LibreDWG converter; `AcApDocManager.createInstance({ container, baseUrl: same-origin /cad-data/, webworkerFileUrls, autoResize })`; then `acuiRegisterSimpleUiPlugin`. Fonts come from the `cad-data` git submodule, served by `GET /cad-data/[[...path]]` (CORS enabled for the Playwright CLI).
+- Client: register LibreDWG converter; `AcApDocManager.createInstance({ container, baseUrl: same-origin /cad-data/, webworkerFileUrls, autoResize })`; then `acuiRegisterSimpleUiPlugin`. Fonts come from the `cad-data` git submodule, served by `GET /cad-data/[[...path]]`.
 - Open: `fetch(/api/drawings/{id}/file)` → `openDocument(name, arrayBuffer, { mode: Read })`
-- `next.config.ts`: `transpilePackages` for `@mlightcad/*`, `three`, `lodash-es`; `serverExternalPackages` for playwright / CLI / libsql; CAD UI must not SSR
+- `next.config.ts`: `transpilePackages` for `@mlightcad/*`, `three`, `lodash-es`; `serverExternalPackages` for cad-html-exporter / libsql; CAD UI must not SSR
 
 ## UI (drive-style, English default)
 
@@ -134,13 +133,13 @@ iframe `src=/api/drawings/{id}/acex/viewer.html` so relative `./drawing.acex.jso
 - **`/view/[id]?mode=prerender`**: fullscreen ACEX iframe (layers / layouts / measure from the export package)
 - Language toggle: **English** default; Chinese available; saved preference in `localStorage` (does not auto-switch to Chinese from browser language)
 
-Empty state: upload DWG/DXF, or **Load sample drawing** (`canteen.dwg` from local `/cad-data/data/canteen.dwg`) through the same upload/convert pipeline. Headless convert passes `baseUrl` so Chromium loads fonts from this app, not jsDelivr.
+Empty state: upload DWG/DXF, or **Load sample drawing** (`canteen.dwg` from local `/cad-data/data/canteen.dwg`) through the same upload/convert pipeline. Headless convert uses local `cad-data/` as `fontsDir`.
 
 ## README must cover
 
 - Difference between the two open modes (perf/memory vs editable entities)
-- `pnpm install` → `pnpm setup:browser` → `pnpm dev`
-- GPL (LibreDWG), Chromium on Windows, first convert can be slow
+- `pnpm install` → `pnpm dev`
+- GPL (LibreDWG); Node 22+
 - Why `.gz` must not be double-gzipped
 
 Keep this demo out of the cad-viewer monorepo; do not change monorepo packages for this sample.

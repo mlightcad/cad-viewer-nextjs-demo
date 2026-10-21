@@ -69,7 +69,14 @@ export function DriveHome() {
       ) : (
         <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {drawings.map((d) => (
-            <DrawingCard key={d.id} drawing={d} onChanged={() => void refresh()} />
+            <DrawingCard
+              key={d.id}
+              drawing={d}
+              onChanged={() => void refresh()}
+              onDeleted={(id) =>
+                setDrawings((prev) => prev.filter((row) => row.id !== id))
+              }
+            />
           ))}
         </div>
       )}

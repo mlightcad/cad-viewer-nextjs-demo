@@ -6,9 +6,8 @@ function withTrailingSlash(url: string): string {
 }
 
 /**
- * Absolute `http(s)` base URL for fonts/templates.
- * The CLI (Playwright) requires an absolute URL; the live viewer uses the
- * same origin so fonts load without a third-party CDN.
+ * Absolute `http(s)` base URL for fonts/templates (e.g. separate CDN).
+ * Live viewer prefers same-origin `/cad-data/` via {@link clientCadDataBaseUrl}.
  */
 export function serverCadDataBaseUrl(): string {
   const explicit =

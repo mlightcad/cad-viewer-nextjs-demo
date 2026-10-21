@@ -9,6 +9,8 @@ export type DrawingDto = {
   status: DrawingStatus
   error: string | null
   createdAt: number
+  /** Prerender wall time in ms; null while uploading/processing or never converted. */
+  convertMs: number | null
   hasPreview: boolean
 }
 
@@ -263,4 +265,17 @@ export function formatBytes(n: number) {
 
 export function formatDate(ts: number, locale: string) {
   return new Date(ts).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US')
+}
+
+/** Human-readable duration for prerender / convert wall time. */
+export function formatDuration(ms: number) {
+  if (ms < 1000) return `${Math.round(ms)} ms`
+  if (ms < 60_000) {
+    const sec = ms / 1000
+    return `${sec < 10 ? sec.toFixed(1) : Math.round(sec)} s`
+  }
+  const totalSec = Math.round(ms / 1000)
+  const minutes = Math.floor(totalSec / 60)
+  const seconds = totalSec % 60
+  return `${minutes}m ${seconds}s`
 }

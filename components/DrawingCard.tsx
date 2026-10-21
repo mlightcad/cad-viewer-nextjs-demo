@@ -4,11 +4,18 @@ import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 
 import { useI18n } from '@/components/I18nProvider'
-import { formatBytes, formatDate, type DrawingDto } from '@/lib/client-upload'
+import {
+  formatBytes,
+  formatDate,
+  formatDuration,
+  type DrawingDto,
+} from '@/lib/client-upload'
 
 type Props = {
   drawing: DrawingDto
   onChanged: () => void
+  /** Optimistic local removal before the DELETE request finishes. */
+  onDeleted?: (id: string) => void
 }
 
 const statusClass: Record<string, string> = {
@@ -18,7 +25,7 @@ const statusClass: Record<string, string> = {
   failed: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200',
 }
 
-export function DrawingCard({ drawing, onChanged }: Props) {
+export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
   const { t, locale } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -72,7 +79,13 @@ export function DrawingCard({ drawing, onChanged }: Props) {
   const remove = async () => {
     setMenuOpen(false)
     if (!window.confirm(t('confirmDelete'))) return
-    await fetch(`/api/drawings/${drawing.id}`, { method: 'DELETE' })
+    onDeleted?.(drawing.id)
+    const res = await fetch(`/api/drawings/${drawing.id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      // Restore list if delete failed (e.g. network / server error).
+      onChanged()
+      return
+    }
     onChanged()
   }
 
@@ -207,6 +220,12 @@ export function DrawingCard({ drawing, onChanged }: Props) {
         <p className="text-xs text-zinc-500">
           {t('fileSize')}: {formatBytes(drawing.size)} · {t('createdAt')}:{' '}
           {formatDate(drawing.createdAt, locale)}
+          {drawing.convertMs != null ? (
+            <>
+              {' '}
+              · {t('prerenderTime')}: {formatDuration(drawing.convertMs)}
+            </>
+          ) : null}
         </p>
         {drawing.error && (
           <p className="line-clamp-2 text-xs text-red-500" title={drawing.error}>

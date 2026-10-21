@@ -32,10 +32,6 @@ export function acexDir(drawingId: string) {
   return path.join(drawingDir(drawingId), 'acex')
 }
 
-export function convertWorkDir(drawingId: string) {
-  return path.join(drawingDir(drawingId), '.convert')
-}
-
 export async function ensureDataDirs() {
   await mkdir(DATA_ROOT, { recursive: true })
   await mkdir(path.join(DATA_ROOT, 'uploads'), { recursive: true })

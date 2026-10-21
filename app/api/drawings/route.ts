@@ -23,6 +23,7 @@ export async function GET() {
       status: row.status,
       error: row.error,
       createdAt: row.createdAt,
+      convertMs: row.convertMs,
       hasPreview: await hasPreviewImage(row.id),
     }))
   )

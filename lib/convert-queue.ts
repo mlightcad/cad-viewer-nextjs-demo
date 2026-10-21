@@ -1,60 +1,176 @@
 import { eq } from 'drizzle-orm'
-import { unzipSync } from 'fflate'
 import {
-  copyFile,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from 'node:fs/promises'
-import os from 'node:os'
+  type ChildProcess,
+  execFileSync,
+  spawn,
+} from 'node:child_process'
+import {
+  existsSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { rm } from 'node:fs/promises'
 
-import { serverCadDataBaseUrl } from './cad-data-url'
+import { cadDataRoot } from './cad-data'
 import { db, ensureDb } from './db'
 import { drawings } from './schema'
 import {
   acexDir,
-  convertWorkDir,
+  drawingDir,
   originalPath,
-  previewPath,
   previewPathJpg,
 } from './storage'
 
 type QueueItem = { drawingId: string }
 
 const queue: QueueItem[] = []
+const activeChildren = new Map<string, ChildProcess>()
+const cancelled = new Set<string>()
 let running = false
 let resumed = false
 
-function scriptPath() {
-  return path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '..',
-    'scripts',
-    'export-html-multi-preview.scr'
-  )
+function convertScriptPath() {
+  return path.join(process.cwd(), 'scripts', 'convert-drawing.mjs')
 }
 
-async function unzipAcExZip(zipBytes: Uint8Array, targetDir: string) {
-  const files = unzipSync(zipBytes)
-  await mkdir(targetDir, { recursive: true })
-  for (const [name, data] of Object.entries(files)) {
-    const normalized = name.replace(/\\/g, '/')
-    if (!normalized || normalized.endsWith('/')) continue
-    if (normalized.includes('..')) {
-      throw new Error(`Unsafe zip entry: ${name}`)
+/** Survives HMR / module reload so we can kill orphans after `activeChildren` is lost. */
+function convertPidPath(drawingId: string) {
+  return path.join(drawingDir(drawingId), '.convert.pid')
+}
+
+function killPid(pid: number) {
+  if (pid <= 0) return
+  if (process.platform === 'win32') {
+    try {
+      execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      })
+    } catch {
+      /* already gone */
     }
-    const dest = path.join(targetDir, normalized)
-    await mkdir(path.dirname(dest), { recursive: true })
-    await writeFile(dest, data)
+    return
+  }
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    /* already gone */
   }
 }
 
+function clearConvertPid(drawingId: string) {
+  try {
+    unlinkSync(convertPidPath(drawingId))
+  } catch {
+    /* missing */
+  }
+}
+
+/** Kill a convert child left over after HMR or server restart (pid file on disk). */
+function killOrphanConvert(drawingId: string) {
+  const pidFile = convertPidPath(drawingId)
+  if (!existsSync(pidFile)) return
+  try {
+    const pid = Number(readFileSync(pidFile, 'utf8').trim())
+    if (Number.isFinite(pid) && pid > 0) {
+      killPid(pid)
+    }
+  } catch {
+    /* unreadable */
+  }
+  clearConvertPid(drawingId)
+}
+
+function runExportInChild(
+  drawingId: string,
+  input: string,
+  targetAcEx: string,
+  fontsDir: string,
+  previewJpg: string
+): Promise<void> {
+  // Ensure no leftover writer from a previous server instance / HMR reload.
+  killOrphanConvert(drawingId)
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [convertScriptPath(), input, targetAcEx, fontsDir, previewJpg],
+      {
+        stdio: ['ignore', 'inherit', 'inherit'],
+        env: process.env,
+        windowsHide: true,
+      }
+    )
+    activeChildren.set(drawingId, child)
+    if (child.pid) {
+      try {
+        writeFileSync(convertPidPath(drawingId), String(child.pid), 'utf8')
+      } catch (err) {
+        console.error(`[convert] failed to write pid file for ${drawingId}:`, err)
+      }
+    }
+
+    child.on('error', (err) => {
+      activeChildren.delete(drawingId)
+      clearConvertPid(drawingId)
+      reject(err)
+    })
+
+    child.on('exit', (code, signal) => {
+      activeChildren.delete(drawingId)
+      clearConvertPid(drawingId)
+      if (cancelled.has(drawingId)) {
+        resolve()
+        return
+      }
+      if (code === 0) {
+        resolve()
+        return
+      }
+      reject(
+        new Error(
+          signal
+            ? `Convert process killed (${signal})`
+            : `Convert process exited with code ${code}`
+        )
+      )
+    })
+  })
+}
+
+/** Drop queued work and kill an in-flight convert for this drawing. */
+export function cancelConvert(drawingId: string) {
+  cancelled.add(drawingId)
+  for (let i = queue.length - 1; i >= 0; i--) {
+    if (queue[i].drawingId === drawingId) {
+      queue.splice(i, 1)
+    }
+  }
+  const child = activeChildren.get(drawingId)
+  if (child && !child.killed) {
+    child.kill()
+  }
+  // After HMR, `activeChildren` may be empty while the child still runs.
+  killOrphanConvert(drawingId)
+}
+
+async function drawingStillExists(drawingId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: drawings.id })
+    .from(drawings)
+    .where(eq(drawings.id, drawingId))
+    .limit(1)
+  return Boolean(rows[0])
+}
+
 async function convertOne(drawingId: string) {
+  if (cancelled.has(drawingId)) {
+    cancelled.delete(drawingId)
+    return
+  }
+
   await ensureDb()
   const rows = await db
     .select()
@@ -66,99 +182,67 @@ async function convertOne(drawingId: string) {
 
   await db
     .update(drawings)
-    .set({ status: 'processing', error: null })
+    .set({ status: 'processing', error: null, convertMs: null })
     .where(eq(drawings.id, drawingId))
 
-  const workParent = convertWorkDir(drawingId)
-  await mkdir(workParent, { recursive: true })
-  const tmpDir = await mkdtemp(path.join(os.tmpdir(), `cad-convert-${drawingId}-`))
+  const targetAcEx = acexDir(drawingId)
+  const input = originalPath(drawingId, drawing.ext)
+  const startedAt = Date.now()
 
   try {
-    const input = originalPath(drawingId, drawing.ext)
-    const { runHeadless } = await import('@mlightcad/cad-simple-viewer-cli')
+    await runExportInChild(
+      drawingId,
+      input,
+      targetAcEx,
+      cadDataRoot(),
+      previewPathJpg(drawingId)
+    )
 
-    const { savedFiles } = await runHeadless({
-      inputPath: input,
-      scriptPath: scriptPath(),
-      outputDir: tmpDir,
-      mode: 'read',
-      baseUrl: serverCadDataBaseUrl(),
-    })
+    const convertMs = Math.max(0, Date.now() - startedAt)
 
-    const listed = await readdir(tmpDir)
-    const zipFile =
-      savedFiles.find((f) => f.toLowerCase().endsWith('.zip')) ??
-      listed
-        .map((f) => path.join(tmpDir, f))
-        .find((f) => f.toLowerCase().endsWith('.zip'))
-
-    if (!zipFile) {
-      throw new Error('Conversion produced no ACEX zip')
+    if (cancelled.has(drawingId)) {
+      cancelled.delete(drawingId)
+      await rm(drawingDir(drawingId), { recursive: true, force: true }).catch(
+        () => undefined
+      )
+      return
     }
 
-    const rasterFile =
-      savedFiles.find((f) => /\.(png|jpe?g)$/i.test(f)) ??
-      listed
-        .map((f) => path.join(tmpDir, f))
-        .find((f) => /\.(png|jpe?g)$/i.test(f))
-
-    const targetAcEx = acexDir(drawingId)
-    await rm(targetAcEx, { recursive: true, force: true })
-    await mkdir(targetAcEx, { recursive: true })
-
-    const zipBytes = new Uint8Array(await readFile(zipFile))
-    const extractTmp = path.join(tmpDir, '_extract')
-    await unzipAcExZip(zipBytes, extractTmp)
-
-    const extracted = await readdir(extractTmp, { withFileTypes: true })
-    let sourceRoot = extractTmp
-    if (
-      extracted.length === 1 &&
-      extracted[0].isDirectory() &&
-      extracted[0].name !== 'chunks'
-    ) {
-      sourceRoot = path.join(extractTmp, extracted[0].name)
-    }
-
-    async function copyTree(src: string, dest: string) {
-      await mkdir(dest, { recursive: true })
-      const entries = await readdir(src, { withFileTypes: true })
-      for (const entry of entries) {
-        const s = path.join(src, entry.name)
-        const d = path.join(dest, entry.name)
-        if (entry.isDirectory()) {
-          await copyTree(s, d)
-        } else {
-          await copyFile(s, d)
-        }
-      }
-    }
-
-    await copyTree(sourceRoot, targetAcEx)
-
-    if (rasterFile) {
-      const lower = rasterFile.toLowerCase()
-      if (lower.endsWith('.png')) {
-        await copyFile(rasterFile, previewPath(drawingId))
-      } else {
-        await copyFile(rasterFile, previewPathJpg(drawingId))
-      }
+    if (!(await drawingStillExists(drawingId))) {
+      await rm(drawingDir(drawingId), { recursive: true, force: true }).catch(
+        () => undefined
+      )
+      return
     }
 
     await db
       .update(drawings)
-      .set({ status: 'ready', error: null })
+      .set({ status: 'ready', error: null, convertMs })
       .where(eq(drawings.id, drawingId))
   } catch (err) {
+    const convertMs = Math.max(0, Date.now() - startedAt)
+
+    if (cancelled.has(drawingId)) {
+      cancelled.delete(drawingId)
+      await rm(drawingDir(drawingId), { recursive: true, force: true }).catch(
+        () => undefined
+      )
+      return
+    }
+
+    if (!(await drawingStillExists(drawingId))) {
+      await rm(drawingDir(drawingId), { recursive: true, force: true }).catch(
+        () => undefined
+      )
+      return
+    }
+
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[convert] ${drawingId} failed:`, err)
     await db
       .update(drawings)
-      .set({ status: 'failed', error: message })
+      .set({ status: 'failed', error: message, convertMs })
       .where(eq(drawings.id, drawingId))
-  } finally {
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)
-    await rm(workParent, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 
@@ -176,6 +260,7 @@ async function pump() {
 }
 
 export function enqueueConvert(drawingId: string) {
+  cancelled.delete(drawingId)
   if (!queue.some((q) => q.drawingId === drawingId)) {
     queue.push({ drawingId })
   }
@@ -192,6 +277,8 @@ export async function resumePendingConverts() {
     .from(drawings)
     .where(eq(drawings.status, 'processing'))
   for (const row of pending) {
+    // Stop any orphan writer before re-enqueueing the same drawing.
+    killOrphanConvert(row.id)
     enqueueConvert(row.id)
   }
 }

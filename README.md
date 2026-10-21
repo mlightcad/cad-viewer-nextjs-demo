@@ -5,11 +5,11 @@ Demo of integrating [`@mlightcad/cad-simple-viewer`](https://www.npmjs.com/packa
 | Mode | Description | Best for |
 |------|-------------|----------|
 | **Live parse** | Browser downloads the original DWG/DXF and parses/renders it with LibreDWG WASM + Web Workers | Entity-level interaction; full viewer capabilities |
-| **Prerendered** | Server converts once via CLI (Playwright headless Chromium) to an **ACEX** multi-file package; the browser loads display geometry only | Publish / share / repeat viewing — faster first paint, lower memory |
+| **Prerendered** | Server converts once via [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter) (Node, no browser) to an **ACEX** multi-file package; the browser loads display geometry only | Publish / share / repeat viewing — faster first paint, lower memory |
 
 UI is **English / 中文** (header toggle, **English by default**; preference stored in `localStorage`). Design notes: [docs/PLAN.md](./docs/PLAN.md). Chinese README: [README.zh-CN.md](./README.zh-CN.md).
 
-> Server conversion is **not** pure Node DWG parsing. It uses the official [`@mlightcad/cad-simple-viewer-cli`](https://www.npmjs.com/package/@mlightcad/cad-simple-viewer-cli) headless browser pipeline. See the [ACEX hosting guide](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md).
+> Server conversion uses the headless Node exporter [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter) (LibreDWG + three-renderer stub, no Playwright). See the [ACEX hosting guide](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md).
 
 ## Why two open modes?
 
@@ -27,15 +27,14 @@ If you do not need a drive/API at all and only want to **hand someone one file**
 - Drive-style home: preview cards, status badges (uploading / prerendering / ready / failed)
 - **Chunked upload + resume** (2 MiB chunks; pause supported; resume key `name+size+lastModified` in localStorage)
 - SQLite via `@libsql/client` (local file DB, easy to start)
-- After upload: serial convert to ACEX zip + PNG preview (`pngout`; published CLI runners may not include `jpgout`)
+- After upload: serial convert to ACEX package + JPEG preview (drawing thumbnail when present)
 - Open a drawing with either live parse or prerendered ACEX
 - Clicking a preview opens the prerendered viewer when status is Ready
 
 ## Requirements
 
-- **Node.js 20+** (22/24 recommended)
+- **Node.js 22+** (required by `@mlightcad/cad-html-exporter`)
 - **pnpm** 10+
-- Playwright Chromium on first convert setup
 
 ## Quick start
 
@@ -44,7 +43,6 @@ git clone --recurse-submodules https://github.com/mlightcad/cad-viewer-nextjs-de
 cd cad-viewer-nextjs-demo
 # existing clone without fonts: git submodule update --init --recursive
 pnpm install                # postinstall also runs sync-cad-data (jsDelivr if git fails)
-pnpm setup:browser          # install Chromium (first time only)
 pnpm dev
 ```
 
@@ -67,9 +65,9 @@ pnpm build
 Fonts, SHX files, DXF templates, and sample drawings come from the [`mlightcad/cad-data`](https://github.com/mlightcad/cad-data) **git submodule** at `cad-data/`. Next.js serves that tree at **`/cad-data/`** (same layout as the [self-hosted fonts wiki](https://github.com/mlightcad/cad-viewer/wiki/Self-Hosted-Fonts-and-Templates)):
 
 - Live viewer: `AcApDocManager` `baseUrl` is this app’s origin + `/cad-data/`
-- Headless convert (`runHeadless`): `baseUrl` is `http://127.0.0.1:$PORT/cad-data/` so Playwright loads local fonts (CLI 1.7.2+). Override with `CAD_DATA_BASE_URL` / `NEXT_PUBLIC_CAD_DATA_BASE_URL` if the app is not on port 3000 or you use a separate CDN.
+- Headless convert (`exportFileToHtml`): `fontsDir` points at the local `cad-data/` checkout so faces load from disk (no CDN). Override live-viewer CDN with `NEXT_PUBLIC_CAD_DATA_BASE_URL` if fonts are hosted elsewhere.
 
-`cad-data` is not copied into `public/` (avoids duplicating ~46MB of binaries). The catch-all route `GET /cad-data/[[...path]]` reads the submodule and sets CORS so the CLI’s Chromium origin can fetch fonts. Font licensing is **your** responsibility (see the cad-data README).
+`cad-data` is not copied into `public/` (avoids duplicating ~46MB of binaries). The catch-all route `GET /cad-data/[[...path]]` reads the submodule and sets CORS for the live viewer. Font licensing is **your** responsibility (see the cad-data README).
 
 If `git submodule update` cannot reach GitHub, `scripts/sync-cad-data.mjs` (run from `postinstall` / `pnpm sync:cad-data`) downloads the same tree from jsDelivr.
 
@@ -86,10 +84,10 @@ If `git submodule update` cannot reach GitHub, `scripts/sync-cad-data.mjs` (run 
 Browser ──chunked upload──► Next.js API ──► SQLite + data/
                                │
                                ▼
-                    cad-simple-viewer-cli (Playwright)
+                    cad-html-exporter (Node)
                                │
                                ▼
-                    ACEX package + preview.png
+                    ACEX package + preview.jpg
                                │
            ┌───────────────────┴───────────────────┐
            ▼                                       ▼
@@ -110,9 +108,8 @@ app/api/uploads…          Chunked upload
 app/api/drawings…         List / original / preview / ACEX
 components/               Drive UI, LiveViewer, PrerenderViewer, i18n
 lib/db.ts                 SQLite
-lib/convert-queue.ts      Serial prerender queue
+lib/convert-queue.ts      Serial prerender queue (cad-html-exporter)
 scripts/copy-workers.mjs
-scripts/export-html-multi-preview.scr
 docs/PLAN.md              Implementation plan (English)
 cad-data/                 Submodule: fonts, templates, samples
 data/                     Runtime data (gitignored)
@@ -128,7 +125,6 @@ data/                     Runtime data (gitignored)
 
 ## Known limitations (demo)
 
-- Convert queue is **serial in the current Node process**; after `next dev` HMR, `processing` jobs are re-enqueued
-- First convert starts Chromium and can be slow
+- Convert queue is **serial in the current Node process**; after `next dev` HMR / restart, orphan convert PIDs (`.convert.pid`) are killed before `processing` jobs are re-enqueued
 - Max file size ~**200MB**; no multi-user auth
 - `AcApDocManager` is a singleton; re-entering the Live page may find plugins already loaded (demo handles this defensively)

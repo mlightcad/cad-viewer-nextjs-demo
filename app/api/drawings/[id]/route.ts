@@ -2,11 +2,11 @@ import { eq } from 'drizzle-orm'
 import { rm } from 'node:fs/promises'
 import { NextResponse } from 'next/server'
 
-import { enqueueConvert, resumePendingConverts } from '@/lib/convert-queue'
+import { cancelConvert, enqueueConvert, resumePendingConverts } from '@/lib/convert-queue'
 import { db, ensureDb } from '@/lib/db'
 import { hasPreviewImage } from '@/lib/preview'
 import { drawings, uploads } from '@/lib/schema'
-import { drawingDir } from '@/lib/storage'
+import { drawingDir, uploadDir } from '@/lib/storage'
 
 export const runtime = 'nodejs'
 
@@ -31,6 +31,7 @@ export async function GET(_request: Request, { params }: Params) {
     status: row.status,
     error: row.error,
     createdAt: row.createdAt,
+    convertMs: row.convertMs,
     hasPreview: await hasPreviewImage(row.id),
   })
 }
@@ -39,8 +40,22 @@ export async function DELETE(_request: Request, { params }: Params) {
   await ensureDb()
   const { id } = await params
 
+  // Stop queued / in-flight convert so it cannot recreate files after delete.
+  cancelConvert(id)
+
+  const uploadRows = await db
+    .select({ id: uploads.id })
+    .from(uploads)
+    .where(eq(uploads.drawingId, id))
+  for (const row of uploadRows) {
+    await rm(uploadDir(row.id), { recursive: true, force: true }).catch(
+      () => undefined
+    )
+  }
+
   await db.delete(uploads).where(eq(uploads.drawingId, id))
   await db.delete(drawings).where(eq(drawings.id, id))
+  // Removes original.*, preview.*, and acex/ prerender package.
   await rm(drawingDir(id), { recursive: true, force: true }).catch(() => undefined)
 
   return NextResponse.json({ ok: true })
@@ -68,7 +83,7 @@ export async function POST(request: Request, { params }: Params) {
 
   await db
     .update(drawings)
-    .set({ status: 'processing', error: null })
+    .set({ status: 'processing', error: null, convertMs: null })
     .where(eq(drawings.id, id))
   enqueueConvert(id)
 

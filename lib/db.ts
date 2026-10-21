@@ -26,6 +26,7 @@ export async function ensureDb() {
       size INTEGER NOT NULL,
       status TEXT NOT NULL,
       error TEXT,
+      convert_ms INTEGER,
       created_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS uploads (
@@ -39,6 +40,14 @@ export async function ensureDb() {
       created_at INTEGER NOT NULL
     );
   `)
+  // Existing DBs created before convert_ms — add column if missing.
+  try {
+    await client.execute(
+      'ALTER TABLE drawings ADD COLUMN convert_ms INTEGER'
+    )
+  } catch {
+    /* column already present */
+  }
   migrated = true
 }
 

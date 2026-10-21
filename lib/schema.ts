@@ -13,6 +13,8 @@ export const drawings = sqliteTable('drawings', {
   size: integer('size').notNull(),
   status: text('status').notNull().$type<DrawingStatus>(),
   error: text('error'),
+  /** Wall-clock prerender duration in ms; null until a convert attempt finishes. */
+  convertMs: integer('convert_ms'),
   createdAt: integer('created_at').notNull(),
 })
 

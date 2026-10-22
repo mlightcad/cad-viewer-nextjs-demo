@@ -9,7 +9,7 @@ Demo of integrating [`@mlightcad/cad-simple-viewer`](https://www.npmjs.com/packa
 
 UI is **English / 中文** (header toggle, **English by default**; preference stored in `localStorage`). Design notes: [docs/PLAN.md](./docs/PLAN.md). Chinese README: [README.zh-CN.md](./README.zh-CN.md).
 
-> Server conversion uses the headless Node exporter [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter) (LibreDWG + three-renderer stub, no Playwright). See the [ACEX hosting guide](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md).
+> Server conversion uses the headless Node exporter [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter). It prefers private [`@mlightcad/dwg-converter`](https://github.com/mlightcad/dwg-converter) when installed, otherwise falls back to LibreDWG. Live parse always uses LibreDWG WASM. See the [ACEX hosting guide](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md).
 
 ## Why two open modes?
 
@@ -116,10 +116,31 @@ data/                     Runtime data (gitignored)
 .github/workflows/ci.yml  Lint, typecheck, build
 ```
 
+## Server DWG conversion
+
+`scripts/convert-drawing.mjs` picks a parser automatically:
+
+1. Optional `@mlightcad/dwg-converter` installed → `dwgParser: 'dwg'`
+2. Otherwise → `libredwg` (always available)
+3. Force with `DWG_PARSER=dwg|libredwg`; commercial license via `DWG_LICENSE_KEY` (omit for trial)
+
+Without GitHub Packages access, `pnpm install` skips the optional `dwg-converter` and server convert uses LibreDWG — the demo still runs end-to-end.
+
+With access, set `GITHUB_TOKEN` (`read:packages`) so the optional dependency installs and is preferred.
+
+Local sync for unpublished `data-model` / `cad-html-exporter` fixes (Node-native ESM `lib/` + exporter externalize):
+
+```bash
+cd ../realdwg-web && pnpm --filter @mlightcad/common --filter @mlightcad/geometry-engine --filter @mlightcad/graphic-interface --filter @mlightcad/data-model run build
+cd ../cad-viewer && pnpm --filter @mlightcad/cad-html-exporter run build
+cd ../cad-viewer-nextjs-demo && pnpm sync:local-mlightcad
+```
+
 ## License notes
 
 - This demo code: MIT (adjust if your repo policy differs)
-- `@mlightcad/libredwg-converter`: **GPL**. If GPL is not acceptable, use a proprietary DWG converter or demo DXF only
+- `@mlightcad/libredwg-converter`: **GPL** (live parse; also server prerender when commercial package is absent)
+- `@mlightcad/dwg-converter`: private / UNLICENSED (optional; preferred for server prerender)
 - Other `@mlightcad/cad-simple-viewer` core packages are mostly MIT (see each package’s `package.json`)
 - Fonts/templates in `cad-data/`: third-party; obtain licenses yourself
 

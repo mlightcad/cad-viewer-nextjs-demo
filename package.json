@@ -6,6 +6,7 @@
     "postinstall": "node scripts/copy-workers.mjs && node scripts/sync-cad-data.mjs",
     "copy:workers": "node scripts/copy-workers.mjs",
     "sync:cad-data": "node scripts/sync-cad-data.mjs",
+    "sync:local-mlightcad": "node scripts/sync-local-mlightcad.mjs",
     "predev": "node scripts/copy-workers.mjs && node scripts/sync-cad-data.mjs",
     "dev": "next dev",
     "prebuild": "node scripts/copy-workers.mjs && node scripts/sync-cad-data.mjs",
@@ -16,13 +17,13 @@
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
-    "@mlightcad/cad-html-exporter": "1.7.7-preview.0",
-    "@mlightcad/cad-simple-ui-plugin": "1.7.7-preview.0",
-    "@mlightcad/cad-simple-viewer": "1.7.7-preview.0",
-    "@mlightcad/data-model": "^1.15.13",
-    "@mlightcad/libredwg-converter": "^3.15.13",
+    "@mlightcad/cad-html-exporter": "1.7.7-preview.1",
+    "@mlightcad/cad-simple-ui-plugin": "1.7.7-preview.1",
+    "@mlightcad/cad-simple-viewer": "1.7.7-preview.1",
+    "@mlightcad/data-model": "^1.15.14",
+    "@mlightcad/libredwg-converter": "^3.15.14",
     "@mlightcad/mtext-renderer": "^0.13.5",
-    "@mlightcad/three-renderer": "1.7.7-preview.0",
+    "@mlightcad/three-renderer": "1.7.7-preview.1",
     "drizzle-orm": "^0.45.2",
     "lodash-es": "^4.17.21",
     "nanoid": "^6.0.1",
@@ -30,6 +31,9 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "three": "^0.186.1"
+  },
+  "optionalDependencies": {
+    "@mlightcad/dwg-converter": "https://npm.pkg.github.com/download/@mlightcad/dwg-converter/1.15.14/55b5604c5f4bff7a7c3a684c3332d89c76e629b9"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -44,5 +48,12 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
-  "packageManager": "pnpm@10.33.4"
+  "packageManager": "pnpm@10.33.4",
+  "pnpm": {
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "eslint": "10"
+      }
+    }
+  }
 }

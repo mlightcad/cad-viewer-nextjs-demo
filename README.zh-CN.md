@@ -11,7 +11,7 @@
 
 UI 支持 **English / 中文**（右上角切换，**默认英文**；用户选择写入 `localStorage`）。
 
-> 服务端转换走无头 Node 导出器 [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter)（LibreDWG + three-renderer stub，无 Playwright）。详见 [ACEX 托管指南](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md)。
+> 服务端转换走无头 Node 导出器 [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter)。若已安装私有 [`@mlightcad/dwg-converter`](https://github.com/mlightcad/dwg-converter) 则优先使用，否则自动回退 LibreDWG。实时查看始终用 LibreDWG WASM。详见 [ACEX 托管指南](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md)。
 
 ## 为什么要两种打开方式？
 
@@ -75,9 +75,30 @@ pnpm build
 
 `.acex.gz` / `.osnap.gz` 必须按**不透明字节**返回，**禁止**设置 `Content-Encoding: gzip`。本示例通过 `GET /api/drawings/[id]/acex/[[...path]]` 显式控制响应头。
 
+## 服务端 DWG 转换
+
+`scripts/convert-drawing.mjs` 自动选择解析器：
+
+1. 已安装可选依赖 `@mlightcad/dwg-converter` → `dwgParser: 'dwg'`
+2. 否则 → `libredwg`（始终可用）
+3. 可用 `DWG_PARSER=dwg|libredwg` 强制指定；商业包可用 `DWG_LICENSE_KEY`（不设则试用）
+
+没有 GitHub Packages 权限时：`pnpm install` 会跳过 optional 的 `dwg-converter`，服务端转换自动走 LibreDWG，demo 仍可完整运行。
+
+有权限时设置 `GITHUB_TOKEN`（`read:packages`），optional 依赖会装上并优先使用商业解析器。
+
+若使用本地未发布的 `data-model` / `cad-html-exporter` 修复（Node 原生 ESM `lib/` + exporter externalize），见：
+
+```bash
+cd ../realdwg-web && pnpm --filter @mlightcad/common --filter @mlightcad/geometry-engine --filter @mlightcad/graphic-interface --filter @mlightcad/data-model run build
+cd ../cad-viewer && pnpm --filter @mlightcad/cad-html-exporter run build
+cd ../cad-viewer-nextjs-demo && pnpm sync:local-mlightcad
+```
+
 ## 许可说明
 
 - 本示例代码：MIT
-- `@mlightcad/libredwg-converter`：**GPL**
+- `@mlightcad/libredwg-converter`：**GPL**（浏览器实时解析；无商业包时也用于服务端预渲染）
+- `@mlightcad/dwg-converter`：私有 / UNLICENSED（可选，服务端预渲染优先）
 - 其余核心包多为 MIT（以各包 `package.json` 为准）
 - `cad-data/` 中的字体与模板为第三方数据，许可需自行解决

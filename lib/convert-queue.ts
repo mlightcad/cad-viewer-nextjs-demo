@@ -15,6 +15,7 @@ import { rm } from 'node:fs/promises'
 
 import { cadDataRoot } from './cad-data'
 import { db, ensureDb } from './db'
+import { parseHtmlBackground } from './html-background'
 import { drawings } from './schema'
 import {
   acexDir,
@@ -88,7 +89,8 @@ function runExportInChild(
   input: string,
   targetAcEx: string,
   fontsDir: string,
-  previewJpg: string
+  previewJpg: string,
+  background: string
 ): Promise<void> {
   // Ensure no leftover writer from a previous server instance / HMR reload.
   killOrphanConvert(drawingId)
@@ -96,7 +98,14 @@ function runExportInChild(
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [convertScriptPath(), input, targetAcEx, fontsDir, previewJpg],
+      [
+        convertScriptPath(),
+        input,
+        targetAcEx,
+        fontsDir,
+        previewJpg,
+        background,
+      ],
       {
         stdio: ['ignore', 'inherit', 'inherit'],
         env: process.env,
@@ -195,7 +204,8 @@ async function convertOne(drawingId: string) {
       input,
       targetAcEx,
       cadDataRoot(),
-      previewPathJpg(drawingId)
+      previewPathJpg(drawingId),
+      parseHtmlBackground(drawing.background)
     )
 
     const convertMs = Math.max(0, Date.now() - startedAt)

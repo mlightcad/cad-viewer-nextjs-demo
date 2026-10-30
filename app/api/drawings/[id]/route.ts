@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 
 import { cancelConvert, enqueueConvert, resumePendingConverts } from '@/lib/convert-queue'
 import { db, ensureDb } from '@/lib/db'
+import { parseHtmlBackground } from '@/lib/html-background'
 import { hasPreviewImage } from '@/lib/preview'
 import { drawings, uploads } from '@/lib/schema'
 import { drawingDir, uploadDir } from '@/lib/storage'
@@ -32,6 +33,7 @@ export async function GET(_request: Request, { params }: Params) {
     error: row.error,
     createdAt: row.createdAt,
     convertMs: row.convertMs,
+    background: parseHtmlBackground(row.background),
     hasPreview: await hasPreviewImage(row.id),
   })
 }
@@ -66,7 +68,10 @@ export async function POST(request: Request, { params }: Params) {
   await ensureDb()
   await resumePendingConverts()
   const { id } = await params
-  const body = (await request.json().catch(() => ({}))) as { action?: string }
+  const body = (await request.json().catch(() => ({}))) as {
+    action?: string
+    background?: unknown
+  }
 
   if (body.action !== 'retry-convert') {
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
@@ -83,7 +88,14 @@ export async function POST(request: Request, { params }: Params) {
 
   await db
     .update(drawings)
-    .set({ status: 'processing', error: null, convertMs: null })
+    .set({
+      status: 'processing',
+      error: null,
+      convertMs: null,
+      ...(typeof body.background === 'string'
+        ? { background: parseHtmlBackground(body.background) }
+        : {}),
+    })
     .where(eq(drawings.id, id))
   enqueueConvert(id)
 

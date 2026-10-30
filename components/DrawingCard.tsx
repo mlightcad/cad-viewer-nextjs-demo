@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 
+import { BackgroundPicker } from '@/components/BackgroundPicker'
 import { useI18n } from '@/components/I18nProvider'
 import {
   formatBytes,
@@ -10,6 +11,7 @@ import {
   formatDuration,
   type DrawingDto,
 } from '@/lib/client-upload'
+import { parseHtmlBackground, type HtmlBackground } from '@/lib/html-background'
 
 type Props = {
   drawing: DrawingDto
@@ -66,12 +68,15 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
     }
   }, [menuOpen])
 
-  const retryConvert = async () => {
+  const retryConvert = async (background?: HtmlBackground) => {
     setMenuOpen(false)
     await fetch(`/api/drawings/${drawing.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'retry-convert' }),
+      body: JSON.stringify({
+        action: 'retry-convert',
+        ...(background ? { background } : {}),
+      }),
     })
     onChanged()
   }
@@ -232,6 +237,16 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
             {t('convertFailed')}: {drawing.error}
           </p>
         )}
+        <BackgroundPicker
+          value={parseHtmlBackground(drawing.background)}
+          disabled={
+            drawing.status === 'uploading' || drawing.status === 'processing'
+          }
+          onChange={(next) => {
+            if (next === parseHtmlBackground(drawing.background)) return
+            void retryConvert(next)
+          }}
+        />
       </div>
     </article>
   )

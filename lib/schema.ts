@@ -15,6 +15,8 @@ export const drawings = sqliteTable('drawings', {
   error: text('error'),
   /** Wall-clock prerender duration in ms; null until a convert attempt finishes. */
   convertMs: integer('convert_ms'),
+  /** Prerender canvas: black (default), white, or space (model black / paper white). */
+  background: text('background').notNull().default('black'),
   createdAt: integer('created_at').notNull(),
 })
 

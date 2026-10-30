@@ -1,3 +1,4 @@
+import type { HtmlBackground } from '@/lib/html-background'
 import type { DrawingStatus } from '@/lib/schema'
 import { CHUNK_SIZE, uploadResumeKey } from '@/lib/upload'
 
@@ -11,6 +12,8 @@ export type DrawingDto = {
   createdAt: number
   /** Prerender wall time in ms; null while uploading/processing or never converted. */
   convertMs: number | null
+  /** Canvas baked into the prerendered HTML. */
+  background: HtmlBackground
   hasPreview: boolean
 }
 
@@ -31,7 +34,10 @@ type InitResponse = {
   totalChunks: number
 }
 
-async function initUpload(file: File): Promise<InitResponse> {
+async function initUpload(
+  file: File,
+  background: HtmlBackground
+): Promise<InitResponse> {
   const res = await fetch('/api/uploads', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -39,6 +45,7 @@ async function initUpload(file: File): Promise<InitResponse> {
       fileName: file.name,
       fileSize: file.size,
       lastModified: file.lastModified,
+      background,
     }),
   })
   if (!res.ok) {
@@ -103,7 +110,8 @@ export type UploadController = {
  */
 export function uploadFileChunked(
   file: File,
-  onProgress: (p: UploadProgress) => void
+  onProgress: (p: UploadProgress) => void,
+  getBackground: () => HtmlBackground = () => 'black'
 ): UploadController {
   let paused = false
   let pauseWaiters: Array<() => void> = []
@@ -163,7 +171,7 @@ export function uploadFileChunked(
     }
 
     if (!uploadId) {
-      const init = await initUpload(file)
+      const init = await initUpload(file, getBackground())
       uploadId = init.uploadId
       chunkSize = init.chunkSize
       totalChunks = init.totalChunks
@@ -225,6 +233,8 @@ export function uploadFileChunked(
 
     const complete = await fetch(`/api/uploads/${uploadId}/complete`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ background: getBackground() }),
     })
     if (!complete.ok) {
       const err = await complete.json().catch(() => ({}))

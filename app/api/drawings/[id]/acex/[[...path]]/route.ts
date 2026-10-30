@@ -22,6 +22,34 @@ function contentTypeFor(filePath: string): string {
   return 'application/octet-stream'
 }
 
+/**
+ * Chunk filenames stay `chunks/L0-000.acex.gz` across reconverts, including a
+ * canvas-background change that rewrites the bytes. Those responses are
+ * cached as immutable, and the viewer only accepts relative package paths
+ * (no query string). Serve `chunks/v<mtime>/<file>` from the manifest and
+ * strip that segment before reading disk.
+ */
+function chunkCacheVersion(mtimeMs: number): string | null {
+  const version = String(Math.round(mtimeMs))
+  return /^\d+$/.test(version) ? version : null
+}
+
+function stampManifestChunkHrefs(text: string, version: string): string {
+  return text.replace(
+    /"href"\s*:\s*"chunks\/([^"]+)"/g,
+    (match, rest: string) => {
+      if (!/^[A-Za-z0-9._-]+$/.test(rest)) return match
+      return `"href":"chunks/v${version}/${rest}"`
+    }
+  )
+}
+
+function unwrapChunkCacheVersion(relative: string): string {
+  const match = /^chunks\/v\d+\/([^/]+)$/.exec(relative)
+  if (!match?.[1]) return relative
+  return `chunks/${match[1]}`
+}
+
 export async function GET(_request: Request, { params }: Params) {
   await ensureDb()
   const { id, path: segments } = await params
@@ -34,10 +62,11 @@ export async function GET(_request: Request, { params }: Params) {
 
   const relative =
     !segments || segments.length === 0 ? 'viewer.html' : segments.join('/')
+  const storedRelative = unwrapChunkCacheVersion(relative)
 
   let fullPath: string
   try {
-    fullPath = resolveAcExPath(id, relative)
+    fullPath = resolveAcExPath(id, storedRelative)
   } catch {
     return NextResponse.json({ error: 'Invalid path' }, { status: 400 })
   }
@@ -48,6 +77,11 @@ export async function GET(_request: Request, { params }: Params) {
       return NextResponse.json({ error: 'Not a file' }, { status: 404 })
     }
     const buf = await readFile(fullPath)
+    const version = chunkCacheVersion(info.mtimeMs)
+    const body =
+      storedRelative === 'drawing.acex.json' && version
+        ? stampManifestChunkHrefs(buf.toString('utf8'), version)
+        : buf
     const headers: Record<string, string> = {
       'Content-Type': contentTypeFor(fullPath),
       'Cache-Control': relative.includes('chunks/')
@@ -58,7 +92,7 @@ export async function GET(_request: Request, { params }: Params) {
     if (fullPath.toLowerCase().endsWith('.gz')) {
       headers['X-Content-Type-Options'] = 'nosniff'
     }
-    return new NextResponse(buf, { headers })
+    return new NextResponse(body, { headers })
   } catch {
     return NextResponse.json(
       { error: `Missing ${path.basename(fullPath)}` },

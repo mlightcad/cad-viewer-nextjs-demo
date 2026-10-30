@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { nanoid } from 'nanoid'
 
 import { db, ensureDb } from '@/lib/db'
+import { parseHtmlBackground } from '@/lib/html-background'
 import { drawings, uploads } from '@/lib/schema'
 import { uploadDir } from '@/lib/storage'
 import { CHUNK_SIZE, validateUploadMeta } from '@/lib/upload'
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
     fileName?: string
     fileSize?: number
     lastModified?: number
+    background?: unknown
   }
 
   const fileName = body.fileName?.trim()
@@ -43,6 +45,7 @@ export async function POST(request: Request) {
     size: fileSize,
     status: 'uploading',
     error: null,
+    background: parseHtmlBackground(body.background),
     createdAt: now,
   })
 

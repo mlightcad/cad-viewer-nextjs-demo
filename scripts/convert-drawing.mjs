@@ -83,6 +83,7 @@ async function main() {
     previewOrBackground,
     backgroundArg
   )
+
   const dwgParser = await resolveDwgParser()
   console.info(
     `[convert-drawing] dwgParser=${dwgParser} background=${background}`
@@ -96,6 +97,8 @@ async function main() {
   await exportFileToHtml(input, acexOut, {
     exportFormat: 'multi',
     zipPackage: false,
+    // Uncompressed ACEC/ACEO chunk budget (default 10 MiB; clamp 1–64 MiB).
+    maxChunkBytes: 10 * 1024 * 1024,
     viewerMode: 'measure',
     exportInvisibleLayers: true,
     exportLayouts: true,

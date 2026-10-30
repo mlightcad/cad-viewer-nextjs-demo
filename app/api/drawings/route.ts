@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 
 import { resumePendingConverts } from '@/lib/convert-queue'
 import { db, ensureDb } from '@/lib/db'
+import { parseHtmlBackground } from '@/lib/html-background'
 import { hasPreviewImage } from '@/lib/preview'
 import { drawings } from '@/lib/schema'
 
@@ -24,6 +25,7 @@ export async function GET() {
       error: row.error,
       createdAt: row.createdAt,
       convertMs: row.convertMs,
+      background: parseHtmlBackground(row.background),
       hasPreview: await hasPreviewImage(row.id),
     }))
   )

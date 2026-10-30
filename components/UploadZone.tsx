@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 
+import { BackgroundPicker } from '@/components/BackgroundPicker'
 import { useI18n } from '@/components/I18nProvider'
 import { clientSampleDrawingUrl } from '@/lib/cad-data-url'
 import {
@@ -10,6 +11,42 @@ import {
   type UploadController,
   type UploadProgress,
 } from '@/lib/client-upload'
+import {
+  parseHtmlBackground,
+  type HtmlBackground,
+} from '@/lib/html-background'
+
+const BACKGROUND_STORAGE_KEY = 'cad-demo-html-background'
+const BACKGROUND_CHANGE_EVENT = 'cad-demo-html-background-change'
+
+function readStoredBackground(): HtmlBackground {
+  try {
+    return parseHtmlBackground(
+      window.localStorage.getItem(BACKGROUND_STORAGE_KEY)
+    )
+  } catch {
+    return 'black'
+  }
+}
+
+function subscribeBackground(onStoreChange: () => void) {
+  const handler = () => onStoreChange()
+  window.addEventListener('storage', handler)
+  window.addEventListener(BACKGROUND_CHANGE_EVENT, handler)
+  return () => {
+    window.removeEventListener('storage', handler)
+    window.removeEventListener(BACKGROUND_CHANGE_EVENT, handler)
+  }
+}
+
+function writeStoredBackground(next: HtmlBackground) {
+  try {
+    window.localStorage.setItem(BACKGROUND_STORAGE_KEY, next)
+  } catch {
+    /* ignore */
+  }
+  window.dispatchEvent(new Event(BACKGROUND_CHANGE_EVENT))
+}
 
 type Props = {
   onUploaded: () => void
@@ -22,10 +59,19 @@ export function UploadZone({ onUploaded }: Props) {
   const [progress, setProgress] = useState<UploadProgress | null>(null)
   const [controller, setController] = useState<UploadController | null>(null)
   const [sampleLoading, setSampleLoading] = useState(false)
+  const background = useSyncExternalStore(
+    subscribeBackground,
+    readStoredBackground,
+    () => 'black' as HtmlBackground
+  )
 
   const runUpload = useCallback(
     async (file: File) => {
-      const ctrl = uploadFileChunked(file, setProgress)
+      const ctrl = uploadFileChunked(
+        file,
+        setProgress,
+        readStoredBackground
+      )
       setController(ctrl)
       try {
         await ctrl.promise
@@ -93,6 +139,8 @@ export function UploadZone({ onUploaded }: Props) {
       <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
         {t('uploadHint')}
       </p>
+
+      <BackgroundPicker value={background} onChange={writeStoredBackground} />
 
       <div
         onDragOver={(e) => {

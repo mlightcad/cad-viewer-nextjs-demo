@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server'
 
 import { enqueueConvert, resumePendingConverts } from '@/lib/convert-queue'
 import { db, ensureDb, parseReceivedBitmap } from '@/lib/db'
+import { parseHtmlBackground } from '@/lib/html-background'
 import { drawings, uploads } from '@/lib/schema'
 import { chunkPath, drawingDir, originalPath, uploadDir } from '@/lib/storage'
 
@@ -14,9 +15,12 @@ export const runtime = 'nodejs'
 
 type Params = { params: Promise<{ id: string }> }
 
-export async function POST(_request: Request, { params }: Params) {
+export async function POST(request: Request, { params }: Params) {
   await ensureDb()
   await resumePendingConverts()
+  const body = (await request.json().catch(() => ({}))) as {
+    background?: unknown
+  }
 
   const { id } = await params
   const rows = await db.select().from(uploads).where(eq(uploads.id, id)).limit(1)
@@ -62,7 +66,13 @@ export async function POST(_request: Request, { params }: Params) {
 
   await db
     .update(drawings)
-    .set({ status: 'processing', error: null })
+    .set({
+      status: 'processing',
+      error: null,
+      ...(typeof body.background === 'string'
+        ? { background: parseHtmlBackground(body.background) }
+        : {}),
+    })
     .where(eq(drawings.id, drawing.id))
 
   // Cleanup upload chunks (best-effort)

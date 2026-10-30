@@ -27,6 +27,7 @@ export async function ensureDb() {
       status TEXT NOT NULL,
       error TEXT,
       convert_ms INTEGER,
+      background TEXT NOT NULL DEFAULT 'black',
       created_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS uploads (
@@ -44,6 +45,13 @@ export async function ensureDb() {
   try {
     await client.execute(
       'ALTER TABLE drawings ADD COLUMN convert_ms INTEGER'
+    )
+  } catch {
+    /* column already present */
+  }
+  try {
+    await client.execute(
+      "ALTER TABLE drawings ADD COLUMN background TEXT NOT NULL DEFAULT 'black'"
     )
   } catch {
     /* column already present */

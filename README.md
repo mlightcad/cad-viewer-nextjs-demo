@@ -4,12 +4,12 @@ Demo of integrating [`@mlightcad/cad-simple-viewer`](https://www.npmjs.com/packa
 
 | Mode | Description | Best for |
 |------|-------------|----------|
-| **Live parse** | Browser downloads the original DWG/DXF and parses/renders it with LibreDWG WASM + Web Workers | Entity-level interaction; full viewer capabilities |
+| **Live parse** | Browser downloads the original DWG/DXF and parses/renders it with the preferred DWG parser (private `dwg-converter` when installed and deployed, otherwise LibreDWG WASM) + Web Workers | Entity-level interaction; full viewer capabilities |
 | **Prerendered** | Server converts once via [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter) (Node, no browser) to an **ACEX** multi-file package; the browser loads display geometry only | Publish / share / repeat viewing — faster first paint, lower memory |
 
 UI is **English / 中文** (header toggle, **English by default**; preference stored in `localStorage`). Design notes: [docs/PLAN.md](./docs/PLAN.md). Chinese README: [README.zh-CN.md](./README.zh-CN.md).
 
-> Server conversion uses the headless Node exporter [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter). It prefers private [`@mlightcad/dwg-converter`](https://github.com/mlightcad/dwg-converter) when installed, otherwise falls back to LibreDWG. Live parse always uses LibreDWG WASM. See the [ACEX hosting guide](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md).
+> Both paths pick their DWG parser the same way: private [`@mlightcad/dwg-converter`](https://github.com/mlightcad/dwg-converter) when it is installed (server) / installed **and** deployed (browser), otherwise LibreDWG. Server conversion uses the headless Node exporter [`@mlightcad/cad-html-exporter`](https://www.npmjs.com/package/@mlightcad/cad-html-exporter). See the [ACEX hosting guide](https://github.com/mlightcad/cad-viewer/blob/main/packages/cad-html-plugin/docs/acex-web-hosting-guide.md).
 
 ## Why two open modes?
 
@@ -17,6 +17,8 @@ CAD on the web is not one product shape. This demo keeps both paths so you can f
 
 - **Live parse** keeps the original DWG/DXF in play — best when you want the full client pipeline.
 - **Prerendered ACEX** pays conversion once on the server, then opens with lower CPU/RAM on phones and thin clients (at the cost of a larger download).
+
+The two paths also differ in *parser cost* rather than parser choice: the commercial parser ships a ~860 KB worker, LibreDWG a ~190 KB worker loader plus a ~10 MB WASM binary.
 
 For a narrative walkthrough of that choice — including mobile memory vs bandwidth — see [*Viewing CAD Drawings in the Browser: Live Parse vs Server-Side Prerender*](https://medium.com/@mlightcad/viewing-cad-drawings-in-the-browser-live-parse-vs-server-side-prerender-97e46f0bed4e) (source draft: [docs/browser-and-server-prerender.md](./docs/browser-and-server-prerender.md)).
 
@@ -61,6 +63,7 @@ pnpm build
 - `mtext-renderer-worker.js`
 - `libredwg-parser-worker.js`
 - `libredwg-web.wasm`
+- `dwg-parser-worker.js` + `dwg-codepage-*.bin` — **only when** the optional `@mlightcad/dwg-converter` is installed (stale copies are removed otherwise)
 
 Fonts, SHX files, DXF templates, and sample drawings come from the [`mlightcad/cad-data`](https://github.com/mlightcad/cad-data) **git submodule** at `cad-data/`. Next.js serves that tree at **`/cad-data/`** (same layout as the [self-hosted fonts wiki](https://github.com/mlightcad/cad-viewer/wiki/Self-Hosted-Fonts-and-Templates)):
 
@@ -109,6 +112,7 @@ app/api/drawings…         List / original / preview / ACEX
 components/               Drive UI, LiveViewer, PrerenderViewer, i18n
 lib/db.ts                 SQLite
 lib/convert-queue.ts      Serial prerender queue (cad-html-exporter)
+lib/client-dwg-parser.ts  Browser DWG parser selection (dwg → libredwg)
 scripts/copy-workers.mjs
 docs/PLAN.md              Implementation plan (English)
 cad-data/                 Submodule: fonts, templates, samples
@@ -116,17 +120,27 @@ data/                     Runtime data (gitignored)
 .github/workflows/ci.yml  Lint, typecheck, build
 ```
 
-## Server DWG conversion
+## DWG parser selection
 
-`scripts/convert-drawing.mjs` picks a parser automatically:
+Both open modes resolve the DWG parser with the same preference order:
 
-1. Optional `@mlightcad/dwg-converter` installed → `dwgParser: 'dwg'`
+1. Optional `@mlightcad/dwg-converter` (private, `optionalDependency`) → `dwg`
 2. Otherwise → `libredwg` (always available)
-3. Force with `DWG_PARSER=dwg|libredwg`; commercial license via `DWG_LICENSE_KEY` (omit for trial)
+3. Server: force with `DWG_PARSER=dwg|libredwg`; commercial license via `DWG_LICENSE_KEY` (omit for trial)
 
-Without GitHub Packages access, `pnpm install` skips the optional `dwg-converter` and server convert uses LibreDWG — the demo still runs end-to-end.
+Server side, `scripts/convert-drawing.mjs` picks the parser for `exportFileToHtml`. Browser side, [`lib/client-dwg-parser.ts`](./lib/client-dwg-parser.ts) picks it before `openDocument`, and requires the parser's worker to actually be **deployed** under `public/workers/`:
+
+- package missing → falls back to LibreDWG
+- `dwg-parser-worker.js` not deployed → falls back to LibreDWG
+- commercial license expired/invalid → falls back to LibreDWG
+
+Falling back is logged as a `console.warn`, so the browser path never fails to open a drawing just because the optional parser is unavailable. Set `NEXT_PUBLIC_DWG_LICENSE_KEY` to supply a browser license key (omit to use the package's 30-day trial, stored in IndexedDB).
+
+Without GitHub Packages access, `pnpm install` skips the optional `dwg-converter` and **both** paths use LibreDWG — the demo still runs end-to-end.
 
 With access, set `GITHUB_TOKEN` (`read:packages`) so the optional dependency installs and is preferred.
+
+Env vars for the browser path: `NEXT_PUBLIC_DWG_LICENSE_KEY` (commercial license; omit for trial), `NEXT_PUBLIC_CAD_DATA_BASE_URL` (CDN-hosted fonts).
 
 Local sync for unpublished `data-model` / `cad-html-exporter` fixes (Node-native ESM `lib/` + exporter externalize):
 
@@ -139,8 +153,8 @@ cd ../cad-viewer-nextjs-demo && pnpm sync:local-mlightcad
 ## License notes
 
 - This demo code: MIT (adjust if your repo policy differs)
-- `@mlightcad/libredwg-converter`: **GPL** (live parse; also server prerender when commercial package is absent)
-- `@mlightcad/dwg-converter`: private / UNLICENSED (optional; preferred for server prerender)
+- `@mlightcad/libredwg-converter`: **GPL** (live parse fallback; also server prerender when the commercial package is absent)
+- `@mlightcad/dwg-converter`: private / UNLICENSED (optional; preferred for live parse and server prerender)
 - Other `@mlightcad/cad-simple-viewer` core packages are mostly MIT (see each package’s `package.json`)
 - Fonts/templates in `cad-data/`: third-party; obtain licenses yourself
 

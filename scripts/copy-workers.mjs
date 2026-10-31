@@ -1,7 +1,19 @@
 /**
  * Copy CAD Web Worker / WASM assets into public/workers for Next.js static serving.
+ *
+ * The private `@mlightcad/dwg-converter` is an optionalDependency: its worker
+ * (plus the lazily fetched `dwg-codepage-*.bin` tables) is copied only when the
+ * package is installed. The live viewer probes that worker before preferring it
+ * over LibreDWG.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -33,6 +45,15 @@ function resolvePackageRoot(name) {
   throw new Error(`Cannot locate package root for ${name}`)
 }
 
+/** Optional package root; `null` when the optional dependency is absent. */
+function tryResolvePackageRoot(name) {
+  try {
+    return resolvePackageRoot(name)
+  } catch {
+    return null
+  }
+}
+
 const copies = [
   {
     from: join(resolvePackageRoot('@mlightcad/cad-simple-viewer'), 'dist', 'mtext-renderer-worker.js'),
@@ -56,4 +77,40 @@ for (const { from, to } of copies) {
   }
   copyFileSync(from, to)
   console.log(`[copy-workers] ${to}`)
+}
+
+// Optional commercial DWG parser: worker + per-codepage fallback tables. The
+// worker resolves the .bin files relative to import.meta.url, so they must sit
+// next to it.
+const dwgConverterRoot = tryResolvePackageRoot('@mlightcad/dwg-converter')
+if (!dwgConverterRoot) {
+  // Drop stale assets from an earlier install so the client probe fails fast
+  // and the live viewer falls back to LibreDWG instead of loading a stale worker.
+  for (const file of readdirSync(destDir)) {
+    if (file === 'dwg-parser-worker.js' || file.startsWith('dwg-codepage-')) {
+      rmSync(join(destDir, file), { force: true })
+      console.log(`[copy-workers] removed stale ${join(destDir, file)}`)
+    }
+  }
+  console.log(
+    '[copy-workers] @mlightcad/dwg-converter not installed — live parse uses LibreDWG'
+  )
+} else {
+  const dist = join(dwgConverterRoot, 'dist')
+  const worker = join(dist, 'dwg-parser-worker.js')
+  if (!existsSync(worker)) {
+    console.error(`[copy-workers] missing: ${worker}`)
+    process.exitCode = 1
+  } else {
+    copyFileSync(worker, join(destDir, 'dwg-parser-worker.js'))
+    console.log(`[copy-workers] ${join(destDir, 'dwg-parser-worker.js')}`)
+
+    if (existsSync(dist)) {
+      for (const file of readdirSync(dist)) {
+        if (!file.startsWith('dwg-codepage-') || !file.endsWith('.bin')) continue
+        copyFileSync(join(dist, file), join(destDir, file))
+        console.log(`[copy-workers] ${join(destDir, file)}`)
+      }
+    }
+  }
 }

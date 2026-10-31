@@ -29,7 +29,7 @@ flowchart LR
 | convert-queue | Serial convert queue: `exportFileToHtml` (multi, no zip) + thumbnail preview; status in SQLite |
 | serve-acex | Drawing CRUD, original file / preview / ACEX routes (no `Content-Encoding` on `.gz`) |
 | netdisk-ui | Drive home: upload progress, preview cards, both open modes, convert status |
-| live-viewer | Client-only cad-simple-viewer + LibreDWG workers + simple-ui toolbar |
+| live-viewer | Client-only cad-simple-viewer + preferred DWG parser workers (commercial when deployed, else LibreDWG) + simple-ui toolbar |
 | prerender-viewer | iframe-hosted ACEX `viewer.html` |
 | docs-verify | README + browser verification of upload / resume / both viewers |
 
@@ -42,7 +42,7 @@ flowchart LR
 - **Convert**: `@mlightcad/cad-html-exporter` `exportFileToHtml` with `exportFormat: 'multi'`, `zipPackage: false`, local `fontsDir: cad-data/`
 - **Live viewer**: client-only `next/dynamic({ ssr: false })` + `@mlightcad/cad-simple-ui-plugin`
 - **Prerendered viewer**: iframe → per-drawing `viewer.html` + `drawing.acex.json` + `chunks/`
-- **DWG**: `@mlightcad/libredwg-converter` (GPL — called out in README)
+- **DWG**: private `@mlightcad/dwg-converter` when installed (server) / installed + deployed (browser), else `@mlightcad/libredwg-converter` (GPL — called out in README)
 - **UI locale**: English by default; 中文 / English toggle; preference in `localStorage`
 - Node **22+** (required by cad-html-exporter)
 
@@ -121,9 +121,10 @@ iframe `src=/api/drawings/{id}/acex/viewer.html` so relative `./drawing.acex.jso
 - `scripts/copy-workers.mjs` (postinstall / predev) copies into `public/workers/`:
   - `mtext-renderer-worker.js` from `@mlightcad/cad-simple-viewer`
   - `libredwg-parser-worker.js` + `libredwg-web.wasm` from `@mlightcad/libredwg-converter`
-- Client: register LibreDWG converter; `AcApDocManager.createInstance({ container, baseUrl: same-origin /cad-data/, webworkerFileUrls, autoResize })`; then `acuiRegisterSimpleUiPlugin`. Fonts come from the `cad-data` git submodule, served by `GET /cad-data/[[...path]]`.
+  - `dwg-parser-worker.js` + `dwg-codepage-*.bin` from `@mlightcad/dwg-converter` — only when that optionalDependency is installed; stale copies are removed otherwise
+- Client: `lib/client-dwg-parser.ts` registers the preferred DWG converter (commercial when imported, its worker is deployed, and a license/trial is available; otherwise LibreDWG) and returns the worker URL to probe; `AcApDocManager.createInstance({ container, baseUrl: same-origin /cad-data/, webworkerFileUrls, autoResize })`; then `acuiRegisterSimpleUiPlugin`. Fonts come from the `cad-data` git submodule, served by `GET /cad-data/[[...path]]`.
 - Open: `fetch(/api/drawings/{id}/file)` → `openDocument(name, arrayBuffer, { mode: Read })`
-- `next.config.ts`: `transpilePackages` for `@mlightcad/*`, `three`, `lodash-es`; `serverExternalPackages` for cad-html-exporter / libsql; CAD UI must not SSR
+- `next.config.ts`: `transpilePackages` for `@mlightcad/*`, `three`, `lodash-es`; `serverExternalPackages` for cad-html-exporter / libsql; CAD UI must not SSR. The optional package is imported with `/* turbopackOptional: true */` so `next build` succeeds when it is not installed.
 
 ## UI (drive-style, English default)
 
@@ -139,7 +140,8 @@ Empty state: upload DWG/DXF, or **Load sample drawing** (`canteen.dwg` from loca
 
 - Difference between the two open modes (perf/memory vs editable entities)
 - `pnpm install` → `pnpm dev`
-- GPL (LibreDWG); Node 22+
+- GPL (LibreDWG) vs private `dwg-converter`; both paths prefer the latter when available
+- Node 22+
 - Why `.gz` must not be double-gzipped
 
 Keep this demo out of the cad-viewer monorepo; do not change monorepo packages for this sample.

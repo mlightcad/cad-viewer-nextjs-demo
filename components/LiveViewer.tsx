@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from 'react'
 
 import { useI18n } from '@/components/I18nProvider'
 import { clientCadDataBaseUrl } from '@/lib/cad-data-url'
+import {
+  dwgLicenseKeyFromEnv,
+  registerClientDwgConverter,
+  registerLibreDwgConverter
+} from '@/lib/client-dwg-parser'
 
 type Props = {
   drawingId: string
@@ -13,6 +18,9 @@ type Props = {
 /**
  * Browser-side live DWG/DXF viewer using @mlightcad/cad-simple-viewer.
  * Must only be mounted client-side (no SSR).
+ *
+ * DWG parser: prefers `@mlightcad/dwg-converter` when installed and deployed,
+ * otherwise LibreDWG — same preference order as server-side prerendering.
  */
 export function LiveViewer({ drawingId, fileName }: Props) {
   const { t, locale } = useI18n()
@@ -22,6 +30,7 @@ export function LiveViewer({ drawingId, fileName }: Props) {
 
   useEffect(() => {
     let cancelled = false
+    let stopProgressWatch: (() => void) | undefined
     const host = hostRef.current
     if (!host) return
 
@@ -32,35 +41,37 @@ export function LiveViewer({ drawingId, fileName }: Props) {
             AcApDocManager,
             AcEdOpenMode,
             AcApI18n,
+            DWG_PARSER_WORKER_FILE,
             LIBREDWG_PARSER_WORKER_FILE,
             MTEXT_RENDERER_WORKER_FILE,
             acedApplyUiTheme,
+            eventBus,
           },
-          { AcDbDatabaseConverterManager, AcDbFileType },
-          { AcDbLibreDwgConverter },
           { acuiRegisterSimpleUiPlugin },
         ] = await Promise.all([
           import('@mlightcad/cad-simple-viewer'),
-          import('@mlightcad/data-model'),
-          import('@mlightcad/libredwg-converter'),
           import('@mlightcad/cad-simple-ui-plugin/register'),
         ])
 
         if (cancelled) return
 
-        const dwgParserUrl = `/workers/${LIBREDWG_PARSER_WORKER_FILE}`
+        const dwgWorkerUrl = `/workers/${DWG_PARSER_WORKER_FILE}`
+        const libredwgWorkerUrl = `/workers/${LIBREDWG_PARSER_WORKER_FILE}`
         const mtextUrl = `/workers/${MTEXT_RENDERER_WORKER_FILE}`
 
-        try {
-          AcDbDatabaseConverterManager.instance.register(
-            AcDbFileType.DWG,
-            new AcDbLibreDwgConverter({
-              useWorker: true,
-              parserWorkerUrl: dwgParserUrl,
-            })
+        // Prefer the commercial parser; registerClientDwgConverter falls back to
+        // LibreDWG when the package is absent or its worker is not deployed.
+        const dwg = await registerClientDwgConverter({
+          dwgWorkerUrl,
+          libredwgWorkerUrl,
+          licenseKey: dwgLicenseKeyFromEnv(),
+        })
+        if (cancelled) return
+
+        if (dwg.fallbackReason) {
+          console.warn(
+            `[LiveViewer] Falling back to LibreDWG: ${dwg.fallbackReason}`
           )
-        } catch {
-          /* may already be registered */
         }
 
         acedApplyUiTheme('dark', host)
@@ -82,7 +93,7 @@ export function LiveViewer({ drawingId, fileName }: Props) {
           baseUrl: clientCadDataBaseUrl(),
           webworkerFileUrls: {
             mtextRender: mtextUrl,
-            dwgParser: dwgParserUrl,
+            dwgParser: dwg.workerUrl,
           },
         })
 
@@ -104,9 +115,58 @@ export function LiveViewer({ drawingId, fileName }: Props) {
         const buffer = await res.arrayBuffer()
         if (cancelled) return
 
-        const ok = await manager.openDocument(fileName, buffer, {
-          mode: AcEdOpenMode.Read,
-        })
+        /**
+         * The library draws its own full-screen spinner (`Parsing file ...`)
+         * inside the same host as soon as `openDocument` starts reporting
+         * progress. Our "Initializing viewer…" overlay is a sibling painted on
+         * top, so it would sit above that spinner and both texts would show.
+         * Hand over as soon as the first progress event arrives; `loading` is
+         * also cleared when the open resolves, which covers the no-progress case.
+         */
+        const onProgress = () => {
+          if (!cancelled) setLoading(false)
+        }
+        eventBus.on('open-file-progress', onProgress)
+        stopProgressWatch = () => eventBus.off('open-file-progress', onProgress)
+
+        const open = (bytes: ArrayBuffer) =>
+          manager.openDocument(fileName, bytes, { mode: AcEdOpenMode.Read })
+
+        /**
+         * Opens once with the registered parser; when that was the commercial
+         * parser and it fails (throw or `false`), re-register LibreDWG and open
+         * again so a commercial-parser limitation never blocks viewing.
+         */
+        const openWithFallback = async (): Promise<boolean> => {
+          try {
+            const ok = await open(buffer)
+            if (ok || dwg.parser !== 'dwg') return ok
+          } catch (err) {
+            if (dwg.parser !== 'dwg') throw err
+            console.warn('[LiveViewer] DWG parse failed:', err)
+          }
+          console.warn(
+            '[LiveViewer] Retrying with LibreDWG:',
+            libredwgWorkerUrl
+          )
+          await registerLibreDwgConverter(libredwgWorkerUrl)
+          /**
+           * Parser workers receive the file bytes as a *transferred*
+           * ArrayBuffer, so the failed attempt detached `buffer` (byteLength 0).
+           * Re-fetch instead of handing the worker an empty buffer, and only
+           * when the bytes are actually gone.
+           */
+          let retryBytes = buffer
+          if (buffer.byteLength === 0) {
+            const again = await fetch(`/api/drawings/${drawingId}/file`)
+            if (!again.ok) throw new Error(`HTTP ${again.status}`)
+            retryBytes = await again.arrayBuffer()
+            if (cancelled) return false
+          }
+          return open(retryBytes)
+        }
+
+        const ok = await openWithFallback()
         if (!ok) throw new Error('openDocument returned false')
         if (!cancelled) setLoading(false)
       } catch (err) {
@@ -119,6 +179,7 @@ export function LiveViewer({ drawingId, fileName }: Props) {
 
     return () => {
       cancelled = true
+      stopProgressWatch?.()
     }
   }, [drawingId, fileName, locale])
 

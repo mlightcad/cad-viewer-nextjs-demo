@@ -20,6 +20,8 @@ type Props = {
   onDeleted?: (id: string) => void
 }
 
+type PdfColorMode = 'color' | 'monochrome'
+
 const statusClass: Record<string, string> = {
   uploading: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200',
   processing: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200',
@@ -30,8 +32,12 @@ const statusClass: Record<string, string> = {
 export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
   const { t, locale } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [exportPdfOpen, setExportPdfOpen] = useState(false)
+  const [exportingPdf, setExportingPdf] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const exportingPdfRef = useRef(false)
   const menuId = useId()
+  const exportSubmenuId = useId()
 
   const statusLabel =
     drawing.status === 'uploading'
@@ -49,16 +55,22 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
   const canPrerender = drawing.status === 'ready'
   const canRetry =
     drawing.status === 'failed' || drawing.status === 'ready'
+  const canExportPdf = drawing.status !== 'uploading' && !exportingPdf
+
+  const closeMenu = () => {
+    setMenuOpen(false)
+    setExportPdfOpen(false)
+  }
 
   useEffect(() => {
     if (!menuOpen) return
     const onPointerDown = (e: PointerEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) {
-        setMenuOpen(false)
+        closeMenu()
       }
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false)
+      if (e.key === 'Escape') closeMenu()
     }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
@@ -69,7 +81,7 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
   }, [menuOpen])
 
   const retryConvert = async (background?: HtmlBackground) => {
-    setMenuOpen(false)
+    closeMenu()
     await fetch(`/api/drawings/${drawing.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -82,7 +94,7 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
   }
 
   const remove = async () => {
-    setMenuOpen(false)
+    closeMenu()
     if (!window.confirm(t('confirmDelete'))) return
     onDeleted?.(drawing.id)
     const res = await fetch(`/api/drawings/${drawing.id}`, { method: 'DELETE' })
@@ -94,8 +106,49 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
     onChanged()
   }
 
+  const exportPdf = async (colorMode: PdfColorMode) => {
+    closeMenu()
+    if (exportingPdfRef.current || drawing.status === 'uploading') return
+    exportingPdfRef.current = true
+    setExportingPdf(true)
+    try {
+      const res = await fetch(
+        `/api/drawings/${drawing.id}/pdf?colorMode=${colorMode}`
+      )
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string
+        } | null
+        window.alert(
+          body?.error ? `${t('exportPdfFailed')}: ${body.error}` : t('exportPdfFailed')
+        )
+        return
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition') ?? ''
+      const match = /filename="([^"]+)"/.exec(disposition)
+      const fallbackStem =
+        drawing.name.replace(/\.[^.]+$/, '') || 'drawing'
+      const fileName = match
+        ? decodeURIComponent(match[1])
+        : `${fallbackStem}${colorMode === 'monochrome' ? '-mono' : ''}.pdf`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      window.alert(`${t('exportPdfFailed')}: ${message}`)
+    } finally {
+      exportingPdfRef.current = false
+      setExportingPdf(false)
+    }
+  }
+
   return (
-    <article className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+    <article className="relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
       <div className="relative aspect-[4/3] bg-zinc-100 dark:bg-zinc-900">
         {drawing.hasPreview ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -128,7 +181,10 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
             aria-label={t('moreActions')}
             aria-expanded={menuOpen}
             aria-controls={menuId}
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={() => {
+              if (menuOpen) closeMenu()
+              else setMenuOpen(true)
+            }}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-black/65 text-white shadow-md backdrop-blur-sm transition hover:bg-black/80"
           >
             <svg
@@ -147,14 +203,14 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
             <div
               id={menuId}
               role="menu"
-              className="absolute left-0 top-full mt-1.5 min-w-[11.5rem] overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 py-1 text-sm shadow-xl"
+              className="absolute left-0 top-full mt-1.5 min-w-[12rem] overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 py-1 text-sm shadow-xl"
             >
               {canLive ? (
                 <Link
                   role="menuitem"
                   href={`/view/${drawing.id}?mode=live`}
                   className="block px-3 py-2 text-zinc-100 hover:bg-zinc-800"
-                  onClick={() => setMenuOpen(false)}
+                  onClick={closeMenu}
                 >
                   {t('openLive')}
                 </Link>
@@ -172,7 +228,7 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
                   role="menuitem"
                   href={`/view/${drawing.id}?mode=prerender`}
                   className="block px-3 py-2 text-zinc-100 hover:bg-zinc-800"
-                  onClick={() => setMenuOpen(false)}
+                  onClick={closeMenu}
                 >
                   {t('openPrerender')}
                 </Link>
@@ -196,6 +252,65 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
                   {t('retryConvert')}
                 </button>
               ) : null}
+
+              {canExportPdf ? (
+                <div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-expanded={exportPdfOpen}
+                    aria-controls={exportSubmenuId}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-zinc-100 hover:bg-zinc-800"
+                    onClick={() => setExportPdfOpen((v) => !v)}
+                  >
+                    <span>{t('exportPdf')}</span>
+                    <svg
+                      viewBox="0 0 20 20"
+                      className={`h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform ${
+                        exportPdfOpen ? 'rotate-90' : ''
+                      }`}
+                      fill="currentColor"
+                      aria-hidden
+                    >
+                      <path d="M7.25 4.5a.75.75 0 0 1 1.28-.53l5 5a.75.75 0 0 1 0 1.06l-5 5A.75.75 0 0 1 7.25 14.5v-10Z" />
+                    </svg>
+                  </button>
+                  {exportPdfOpen ? (
+                    <div
+                      id={exportSubmenuId}
+                      role="group"
+                      aria-label={t('exportPdf')}
+                      className="border-t border-zinc-800 bg-zinc-900/80 py-1"
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="block w-full px-3 py-2 pl-6 text-left text-zinc-100 hover:bg-zinc-800"
+                        onClick={() => void exportPdf('color')}
+                      >
+                        {t('exportPdfColor')}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="block w-full px-3 py-2 pl-6 text-left text-zinc-100 hover:bg-zinc-800"
+                        onClick={() => void exportPdf('monochrome')}
+                      >
+                        {t('exportPdfMono')}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <span
+                  role="menuitem"
+                  aria-disabled
+                  className="block cursor-not-allowed px-3 py-2 text-zinc-500"
+                >
+                  {exportingPdf ? t('exportingPdf') : t('exportPdf')}
+                </span>
+              )}
+
               <button
                 type="button"
                 role="menuitem"
@@ -209,7 +324,7 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
         </div>
 
         <span
-          className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-xs font-medium ${statusClass[drawing.status]}`}
+          className={`absolute right-2 top-2 z-20 rounded-full px-2 py-0.5 text-xs font-medium ${statusClass[drawing.status]}`}
         >
           {statusLabel}
         </span>
@@ -240,7 +355,9 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
         <BackgroundPicker
           value={parseHtmlBackground(drawing.background)}
           disabled={
-            drawing.status === 'uploading' || drawing.status === 'processing'
+            drawing.status === 'uploading' ||
+            drawing.status === 'processing' ||
+            exportingPdf
           }
           onChange={(next) => {
             if (next === parseHtmlBackground(drawing.background)) return
@@ -248,6 +365,24 @@ export function DrawingCard({ drawing, onChanged, onDeleted }: Props) {
           }}
         />
       </div>
+
+      {exportingPdf ? (
+        <div
+          className="export-pdf-mask absolute inset-0 z-30 flex items-center justify-center overflow-hidden bg-zinc-950/55 backdrop-blur-[2px]"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="relative z-10 flex flex-col items-center gap-3 px-4 text-center text-white">
+            <span
+              className="h-9 w-9 animate-spin rounded-full border-2 border-white/25 border-t-white"
+              aria-hidden
+            />
+            <span className="text-sm font-medium tracking-wide">
+              {t('exportingPdf')}
+            </span>
+          </div>
+        </div>
+      ) : null}
     </article>
   )
 }

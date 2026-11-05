@@ -24,3 +24,39 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+@keyframes export-mask-sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes export-mask-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.export-pdf-mask {
+  animation: export-mask-pulse 1.6s ease-in-out infinite;
+}
+
+.export-pdf-mask::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgb(255 255 255 / 0.18) 50%,
+    transparent 65%
+  );
+  animation: export-mask-sweep 1.8s ease-in-out infinite;
+}

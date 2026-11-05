@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
   ],
   serverExternalPackages: [
     '@mlightcad/cad-html-exporter',
+    '@mlightcad/cad-pdf-exporter',
     '@mlightcad/dwg-converter',
     '@libsql/client',
     'libsql',

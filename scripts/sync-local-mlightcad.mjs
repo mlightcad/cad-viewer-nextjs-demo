@@ -4,11 +4,11 @@
  *
  * Syncs:
  * - data-model (+ common / geometry-engine / graphic-interface)
- * - cad-html-exporter dist (data-model external)
+ * - cad-html-exporter / cad-pdf-exporter dist (data-model external)
  *
  * Expects sibling checkouts:
  *   ../realdwg-web/packages/{common,geometry-engine,graphic-interface,data-model}
- *   ../cad-viewer/packages/cad-html-exporter
+ *   ../cad-viewer/packages/{cad-html-exporter,cad-pdf-exporter}
  *
  * Usage:
  *   node scripts/sync-local-mlightcad.mjs
@@ -29,13 +29,9 @@ import { fileURLToPath } from 'node:url'
 const require = createRequire(import.meta.url)
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const realdwg = join(root, '..', 'realdwg-web', 'packages')
-const exporterSrc = join(
-  root,
-  '..',
-  'cad-viewer',
-  'packages',
-  'cad-html-exporter'
-)
+const cadViewerPackages = join(root, '..', 'cad-viewer', 'packages')
+const exporterSrc = join(cadViewerPackages, 'cad-html-exporter')
+const pdfExporterSrc = join(cadViewerPackages, 'cad-pdf-exporter')
 
 function resolveInstalledRoot(name, paths) {
   const entry = require.resolve(name, paths ? { paths } : undefined)
@@ -109,6 +105,14 @@ if (!existsSync(join(exporterSrc, 'dist', 'index.js'))) {
   process.exit(1)
 }
 
+if (!existsSync(join(pdfExporterSrc, 'dist', 'index.js'))) {
+  console.error(
+    '[sync-local-mlightcad] Build cad-pdf-exporter first:\n' +
+      '  cd ../cad-viewer && pnpm --filter @mlightcad/cad-pdf-exporter run build'
+  )
+  process.exit(1)
+}
+
 const dmDest = resolveInstalledRoot('@mlightcad/data-model')
 const searchFrom = [dmDest, root]
 
@@ -131,6 +135,18 @@ syncFile(
   join(exporterSrc, 'dist', 'index.cjs'),
   join(expDest, 'dist', 'index.cjs'),
   'cad-html-exporter index.cjs'
+)
+
+const pdfExpDest = resolveInstalledRoot('@mlightcad/cad-pdf-exporter')
+syncFile(
+  join(pdfExporterSrc, 'dist', 'index.js'),
+  join(pdfExpDest, 'dist', 'index.js'),
+  'cad-pdf-exporter index.js'
+)
+syncFile(
+  join(pdfExporterSrc, 'dist', 'index.cjs'),
+  join(pdfExpDest, 'dist', 'index.cjs'),
+  'cad-pdf-exporter index.cjs'
 )
 
 console.log('[sync-local-mlightcad] done')

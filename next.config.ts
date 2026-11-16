@@ -3,7 +3,6 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   transpilePackages: [
     '@mlightcad/cad-simple-viewer',
-    '@mlightcad/cad-simple-ui-plugin',
     '@mlightcad/data-model',
     '@mlightcad/libredwg-converter',
     '@mlightcad/mtext-renderer',

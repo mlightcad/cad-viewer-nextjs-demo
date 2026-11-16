@@ -36,22 +36,16 @@ export function LiveViewer({ drawingId, fileName }: Props) {
 
     ;(async () => {
       try {
-        const [
-          {
-            AcApDocManager,
-            AcEdOpenMode,
-            AcApI18n,
-            DWG_PARSER_WORKER_FILE,
-            LIBREDWG_PARSER_WORKER_FILE,
-            MTEXT_RENDERER_WORKER_FILE,
-            acedApplyUiTheme,
-            eventBus,
-          },
-          { acuiRegisterSimpleUiPlugin },
-        ] = await Promise.all([
-          import('@mlightcad/cad-simple-viewer'),
-          import('@mlightcad/cad-simple-ui-plugin/register'),
-        ])
+        const {
+          AcApDocManager,
+          AcEdOpenMode,
+          AcApI18n,
+          DWG_PARSER_WORKER_FILE,
+          LIBREDWG_PARSER_WORKER_FILE,
+          MTEXT_RENDERER_WORKER_FILE,
+          acedApplyUiTheme,
+          eventBus,
+        } = await import('@mlightcad/cad-simple-viewer')
 
         if (cancelled) return
 
@@ -95,19 +89,15 @@ export function LiveViewer({ drawingId, fileName }: Props) {
             mtextRender: mtextUrl,
             dwgParser: dwg.workerUrl,
           },
+          // Built-in toolbar + dock palettes (replaces cad-simple-ui-plugin).
+          simpleUi: {
+            host,
+            toolbar: { placement: 'right', items: 'default' },
+          },
         })
 
         if (!manager) {
           throw new Error('Failed to create AcApDocManager')
-        }
-
-        try {
-          await acuiRegisterSimpleUiPlugin(manager.pluginManager, {
-            host,
-            toolbar: { placement: 'right', items: 'default' },
-          })
-        } catch {
-          /* plugin may already be loaded */
         }
 
         const res = await fetch(`/api/drawings/${drawingId}/file`)

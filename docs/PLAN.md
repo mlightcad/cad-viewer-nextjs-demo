@@ -40,7 +40,7 @@ flowchart LR
 - **Storage**: local `data/` directory (gitignored); drawings are not stored in the DB blob
 - **Upload**: custom chunked + resumable upload (no tus; easier to read)
 - **Convert**: `@mlightcad/cad-html-exporter` `exportFileToHtml` with `exportFormat: 'multi'`, `zipPackage: false`, local `fontsDir: cad-data/`
-- **Live viewer**: client-only `next/dynamic({ ssr: false })` + `@mlightcad/cad-simple-ui-plugin`
+- **Live viewer**: client-only `next/dynamic({ ssr: false })` + `@mlightcad/cad-simple-viewer` (built-in `simpleUi` chrome)
 - **Prerendered viewer**: iframe → per-drawing `viewer.html` + `drawing.acex.json` + `chunks/`
 - **DWG**: private `@mlightcad/dwg-converter` when installed (server) / installed + deployed (browser), else `@mlightcad/libredwg-converter` (GPL — called out in README)
 - **UI locale**: English by default; 中文 / English toggle; preference in `localStorage`

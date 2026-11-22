@@ -17,13 +17,13 @@
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
-    "@mlightcad/cad-html-exporter": "1.8.0-preview.5",
-    "@mlightcad/cad-pdf-exporter": "1.8.0-preview.5",
-    "@mlightcad/cad-simple-viewer": "1.8.0-preview.5",
-    "@mlightcad/data-model": "1.15.30",
-    "@mlightcad/libredwg-converter": "3.15.30",
-    "@mlightcad/mtext-renderer": "0.13.9",
-    "@mlightcad/three-renderer": "1.8.0-preview.5",
+    "@mlightcad/cad-html-exporter": "1.8.0-preview.6",
+    "@mlightcad/cad-pdf-exporter": "1.8.0-preview.6",
+    "@mlightcad/cad-simple-viewer": "1.8.0-preview.6",
+    "@mlightcad/data-model": "1.16.0",
+    "@mlightcad/libredwg-converter": "3.16.0",
+    "@mlightcad/mtext-renderer": "0.13.10",
+    "@mlightcad/three-renderer": "1.8.0-preview.6",
     "drizzle-orm": "^0.45.2",
     "lodash-es": "^4.17.21",
     "nanoid": "^6.0.1",
@@ -33,7 +33,7 @@
     "three": "^0.186.1"
   },
   "optionalDependencies": {
-    "@mlightcad/dwg-converter": "https://npm.pkg.github.com/download/@mlightcad/dwg-converter/1.15.30/f7227b9abc0b97569f5589e72394ab65000bdd08"
+    "@mlightcad/dwg-converter": "https://npm.pkg.github.com/download/@mlightcad/dwg-converter/1.16.0/e4c25b766f31249755990abf4f680b39dc014e95"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
